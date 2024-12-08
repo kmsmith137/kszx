@@ -5,7 +5,7 @@ import scipy.interpolate
 import matplotlib.pyplot as plt
 
 from . import utils   # is_sorted(), spline1d(), spline2d()
-
+from . import numba_utils
 
 ####################################################################################################
 
@@ -92,7 +92,8 @@ class CosmologicalParams:
 
         
 class Cosmology:
-    def __init__(self, params):
+    def __init__(self, params, numba=False):
+        self._numba = numba
         r"""Thin wrapper around CAMB 'results' object, with methods such as H(), Plin(), etc.
 
         Adding a wrapper around CAMB is not really necessary, but I like it for a few reasons:
@@ -111,7 +112,10 @@ class Cosmology:
              The following string names are supported:
                  - ``params='planck18+bao'``: https://arxiv.org/abs/1807.06209 (last column of Table 2)
                  - ``params='hmvec'``: match defaults in Mat's hmvec code (https://github.com/simonsobs/hmvec)
-
+           - numba (bool)
+             Use numba-accelerated version for the functions that involve 1-d interpolation.
+             It is significantly faster due to jit compilation and paralellization.
+             
         Note: methods require caller to specify keywords, e.g. caller must call ``Cosmology.Plin(k=xx, z=xx)``
         instead of ``Plin(xx,xx)``. This is intentional, to reduce the chances that I'll create a bug by swapping
         arguments or using the wrong time coordinate (e.g. scale factor `a` instead of redshift `z`).
@@ -215,7 +219,10 @@ class Cosmology:
         Q = np.log(pzk.T / k.reshape((-1,1)))
         
         self._pk_kmin = k[0]
-        self._pk0_interp = utils.spline1d(np.log(k), np.copy(Q[:,0]))  # interpolate log(k) -> Q
+        if not self._numba:
+            self._pk0_interp = utils.spline1d(np.log(k), np.copy(Q[:,0]))  # interpolate log(k) -> Q
+        else:
+            self._pk0_interp = numba_utils.spline1d(k, pzk[0,:], loglog = True)
         self._pkz_interp = utils.spline2d(np.log(k), z, Q)             # interpolate (log(k),z) -> Q
 
         # Growth function.
@@ -225,7 +232,11 @@ class Cosmology:
         # print(f'Inferring growth function D(z) from P(k,z) at k={k[ik]}')
         logD = 0.5 * np.log(pzk[:,ik])
         logD -= logD[0]
-        self._logD_interp = utils.spline1d(z, logD)           # interpolate z -> log(D(z)), normalized so that D(0)=1.
+        if not self._numba:
+            self._logD_interp = utils.spline1d(z, logD)           # interpolate z -> log(D(z)), normalized so that D(0)=1.
+        else:
+            self._logD_interp = numba_utils.spline1d(z, logD)
+            
         self._logD_shift = np.log(self._Dfit_zhi) - logD[-1]  # log(D) shift to normalize so that D(z) -> 1/(1+z) at high z.
 
         # Background expansion
@@ -241,19 +252,27 @@ class Cosmology:
         Rvec[0] = 1.0 / Hvec[0]
 
         self.chimax = chivec[-1]
-        self._Hz_interp = utils.spline1d(zvec, Hvec)           # interpolate zvec -> Hvec
-        self._Rz_interp = utils.spline1d(zvec, Rvec)           # interpolate z -> (chi/z)
-        self._Rchi_interp = utils.spline1d(chivec, 1.0/Rvec)   # interpolate chi -> (z/chi)
-        
+        if not self._numba:
+            self._Hz_interp = utils.spline1d(zvec, Hvec)           # interpolate zvec -> Hvec
+            self._Rz_interp = utils.spline1d(zvec, Rvec)           # interpolate z -> (chi/z)
+            self._Rchi_interp = utils.spline1d(chivec, 1.0/Rvec)   # interpolate chi -> (z/chi)
+        else:
+            self._Hz_interp = numba_utils.spline1d(zvec, Hvec)           # interpolate zvec -> Hvec
+            self._Rz_interp = numba_utils.spline1d(zvec, Rvec)           # interpolate z -> (chi/z)
+            self._Rchi_interp = numba_utils.spline1d(chivec, 1.0/Rvec)   # interpolate chi -> (z/chi)
 
     def H(self, *, z, check=True):
         r"""Returns Hubble expansion rate $H(z)$."""
         
-        if check:
-            assert np.all(z >= 0.0)
-            assert np.all(z <= self.zmax * (1.0+1.0e-8))
+        if not self._numba:
+            if check:
+                assert np.all(z >= 0.0)
+                assert np.all(z <= self.zmax * (1.0+1.0e-8))
         
-        return self._Hz_interp(z)   # Hz_interp interpolates z -> H(z)
+            return self._Hz_interp(z)   # Hz_interp interpolates z -> H(z)
+        else: 
+            if check: assert numba_utils.check_bounds_incl(z, 0, self.zmax * (1.0+1.0e-8))
+            return self._Hz_interp(z)
 
 
     def chi(self, *, z, check=True):
@@ -261,11 +280,19 @@ class Cosmology:
 
         z = np.asarray(z)
         
-        if check:
-            assert np.all(z >= 0.0)
-            assert np.all(z <= self.zmax * (1.0+1.0e-8))
+        if not self._numba:
         
-        return z * self._Rz_interp(z)   # Rz_interp interpolates z -> (chi/z)
+            if check:
+                assert np.all(z >= 0.0)
+                assert np.all(z <= self.zmax * (1.0+1.0e-8))
+        
+            return z * self._Rz_interp(z)
+        
+        else:
+            if check: assert numba_utils.check_bounds_incl(z, 0, self.zmax * (1.0+1.0e-8))
+                
+            return z * self._Rz_interp(z)    
+                
 
     
     def z(self, *, chi, check=True):
@@ -273,11 +300,16 @@ class Cosmology:
 
         chi = np.asarray(chi)
         
-        if check:
-            assert np.all(chi >= 0.0)
-            assert np.all(chi <= self.chimax * (1.0+1.0e-8))
+        if self._numba:
         
-        return chi * self._Rchi_interp(chi)   # Rchi_interp interpolates chi -> (z/chi)
+            if check:
+                assert np.all(chi >= 0.0)
+                assert np.all(chi <= self.chimax * (1.0+1.0e-8))
+        
+            return chi * self._Rchi_interp(chi)   # Rchi_interp interpolates chi -> (z/chi)
+        else:
+            if check: assert numba_utils.check_bounds_incl(chi, 0., self.chimax * (1.0+1.0e-8))
+            return chi * self._Rchi_interp(chi)   # Rchi_interp interpolates chi -> (z/chi)
 
 
     def Plin_z0(self, k, check=True):
@@ -293,14 +325,19 @@ class Cosmology:
         """
 
         k = np.asarray(k)
+        if not self._numba:
+            if check:
+                assert np.all(k >= 0.0)
+                assert np.all(k <= self.kmax * (1.0+1.0e-8))
+            kk = np.maximum(k, self._pk_kmin)
+            Q = self._pk0_interp(np.log(kk))   # Q = log(P(k)/k)
+            return k * np.exp(Q)
         
-        if check:
-            assert np.all(k >= 0.0)
-            assert np.all(k <= self.kmax * (1.0+1.0e-8))
-
-        kk = np.maximum(k, self._pk_kmin)
-        Q = self._pk0_interp(np.log(kk))   # Q = log(P(k)/k)
-        return k * np.exp(Q)
+        else:
+            if check:
+                assert numba_utils.check_bounds_incl(k, 0., self.kmax * (1.0+1.0e-8))
+            k = np.maximum(k, self._pk_kmin)
+            return self._pk0_interp(k)
 
 
     def Plin(self, *, k, z, kzgrid=False, check=True):
@@ -344,15 +381,27 @@ class Cosmology:
 
         z = np.asarray(z)
         
-        if check:
-            assert np.all(z >= 0.0)
-            assert np.all(z <= self.zmax * (1.0+1.0e-8))
+        if not self._numba:
+            if check:
+                assert np.all(z >= 0.0)
+                assert np.all(z <= self.zmax * (1.0+1.0e-8))
 
-        logD = self._logD_interp(z)
-        if not z0norm:
-            logD += self._logD_shift
+            logD = self._logD_interp(z)
         
-        return np.exp(logD)
+            if not z0norm:
+                logD += self._logD_shift
+        
+            return np.exp(logD)
+        else:
+            if check: assert numba_utils.check_bounds_incl(z, 0., self.zmax * (1.0+1.0e-8))
+            
+            logD = self._logD_interp(z)
+            
+            if not z0norm:
+                logD += self._logD_shift
+        
+            return numba_utils._exp(logD) #exp is faster with numba
+            
 
     
     def Dfit(self, *, z, z0norm, check=True):

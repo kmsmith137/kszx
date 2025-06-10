@@ -578,7 +578,6 @@ class KszPipeOutdir:
         t = field[0][0]*self.pk_data[idx_vr_11,:] + field[0][1]*self.pk_data[idx_vr_12,:]
         return field[1][0]*t[idx_vr_21] + field[1][1]*t[idx_vr_22]
 
-
     def pgg_mean(self, fnl=0, ell=[0,0]):
         r"""Returns shape ``(nkbins,)`` array, containing $\langle P_{gg}^{surr}(k) \rangle$."""
         assert ell[0] in self.spin_gal
@@ -650,21 +649,30 @@ class KszPipeOutdir:
         pvv = field[1][0] * pvv[idx_vr_21,:] + field[1][1] * pvv[idx_vr_22,:]      # shape (#params_vel, nkbins)
         return np.sum(params_vel[:, None] * pvv, axis=0)   # shape (nkbins)
 
-    def pggxpgg_cov(self, fnl=0, ell=[0, 0]):
+    def pggxpgg_cov(self, fnl1=0, fnl2=0, 
+                    ell1=[0, 0], 
+                    ell2=[0, 0]):
         r"""Returns shape ``(nkbins, nkbins)`` covariance matrix of $P_{gg}^{surr}(k) x P_{gg}^{surr}(k)$."""
         suff_gal_list = ['null', 'fnl']
-        idx_gal_1 = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in suff_gal_list]
-        idx_gal_2 = [self.surr_fields[f'gal-{ell[1]}-{suff}'] for suff in suff_gal_list]
+        idx_gal_11 = [self.surr_fields[f'gal-{ell1[0]}-{suff}'] for suff in suff_gal_list]
+        idx_gal_12 = [self.surr_fields[f'gal-{ell1[1]}-{suff}'] for suff in suff_gal_list]
+        idx_gal_21 = [self.surr_fields[f'gal-{ell2[0]}-{suff}'] for suff in suff_gal_list]
+        idx_gal_22 = [self.surr_fields[f'gal-{ell2[1]}-{suff}'] for suff in suff_gal_list]
 
-        coeffs = np.array([1, fnl, fnl, fnl**2]) # shape (4, ) ie (len(idx_gal_1)*len(idx_gal_2), )
-        coeff_cov = np.ravel(coeffs[:,None] * coeffs[None,:]) # shape (len(idx_gal_1)*len(idx_gal_2)**2, )
+        coeffs1 = np.array([1, fnl1, fnl1, fnl1**2]) # shape (4, ) ie (len(idx_gal_11)*len(idx_gal_12), )
+        coeffs2 = np.array([1, fnl2, fnl2, fnl2**2])
+        coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:]) # shape (len(idx_gal_21)*len(idx_gal_22)**2, )
         # keep only the indices that are needed for the covariance matrix:
-        idx = np.array([i*self.nsurr_fields + j for i in idx_gal_1 for j in idx_gal_2])  # shape (len(idx_gal_1)*len(idx_gal_2), ) 
-        cov = coeff_cov[:, None, None] * self.surr_cov[idx][:, idx, :, :].reshape(len(idx)**2, self.nkbins, self.nkbins)  
+        idx1 = np.array([i*self.nsurr_fields + j for i in idx_gal_11 for j in idx_gal_12])  # shape (len(idx_gal_11)*len(idx_gal_12), )
+        idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal_21 for jj in idx_gal_22]) 
+
+        cov = coeff_cov[:, None, None] * self.surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins, self.nkbins)  
 
         return np.sum(cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pgvxpgv_cov(self, fnl=0, bv=1, bfg=0, freq1=['90','150'], field1=[1,0], ell1=[0, 1], freq2=['90','150'], field2=[1,0], ell2=[0, 1]):
+    def pgvxpgv_cov(self, fnl1=0, bv1=1, bfg1=0, fnl2=0, bv2=1, bfg2=0,  
+                    freq1=['90','150'], field1=[1,0], ell1=[0, 1],
+                    freq2=['90','150'], field2=[1,0], ell2=[0, 1]):
         r"""Returns shape ``(nkbins, nkbins)`` covariance matrix of $P_{gv}^{surr}(k) x P_{gv}^{surr}(k)$.
         The ``field`` argument is a length-2 vector, selecting a linear combination
         of the 90+150 GHz velocity reconstructions. For example:
@@ -685,8 +693,9 @@ class KszPipeOutdir:
         idx_vr2_1 = [self.surr_fields[f'{freq2[0]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]
         idx_vr2_2 = [self.surr_fields[f'{freq2[1]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]       
 
-        coeffs = np.array([1, bv, bfg, fnl, fnl*bv, fnl*bfg]) if self.sim_surr_fg else np.array([1, bv, fnl, fnl*bv])
-        coeff_cov = np.ravel(coeffs[:,None] * coeffs[None,:])  # shape (len(idx_gal)*len(idx_vr), )
+        coeffs1 = np.array([1, bv1, bfg1, fnl1, fnl1*bv1, fnl1*bfg1]) if self.sim_surr_fg else np.array([1, bv1, fnl1, fnl1*bv1])
+        coeffs2 = np.array([1, bv2, bfg2, fnl2, fnl2*bv2, fnl2*bfg2]) if self.sim_surr_fg else np.array([1, bv2, fnl2, fnl2*bv2])
+        coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
 
         cov = []
         # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields=[1,0]) 
@@ -703,7 +712,9 @@ class KszPipeOutdir:
         field = np.ravel(field1[:, None] * field2[None, :])
         return np.sum(field[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pvvxpvv_cov(self, bv=1, bfg=0, freq1=[['90','150'], ['90','150']], field1=[[1,0], [1,0]], ell1=[1,1], freq2=[['90','150'], ['90','150']], field2=[[1,0], [1,0]], ell2=[1,1]):
+    def pvvxpvv_cov(self, bv1=1, bfg1=0, bv2=1, bfg2=0, 
+                    freq1=[['90','150'], ['90','150']], field1=[[1,0], [1,0]], ell1=[1,1], 
+                    freq2=[['90','150'], ['90','150']], field2=[[1,0], [1,0]], ell2=[1,1]):
         r"""Returns shape ``(nkbins, nkbins)`` covariance matrix of $P_{vv}^{surr}(k)$."""
 
         suff_vel_list = ['null', 'bv', 'bfg'] if self.sim_surr_fg else ['null', 'bv']
@@ -718,8 +729,9 @@ class KszPipeOutdir:
         idx_vr2_2_1 = [self.surr_fields[f'{freq2[1][0]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]
         idx_vr2_2_2 = [self.surr_fields[f'{freq2[1][1]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]       
 
-        coeffs = np.array([1, bv, bfg, bv, bv**2, bv*bfg, bfg, bfg*bv, bfg**2]) if self.sim_surr_fg else np.array([1, bv, bv, bv**2])
-        coeff_cov = np.ravel(coeffs[:,None] * coeffs[None,:])  # shape (len(idx_gal)*len(idx_vr), )
+        coeffs1 = np.array([1, bv1, bfg1, bv1, bv1**2, bv1*bfg1, bfg1, bfg1*bv1, bfg1**2]) if self.sim_surr_fg else np.array([1, bv1, bv1, bv1**2])
+        coeffs2 = np.array([1, bv2, bfg2, bv2, bv2**2, bv2*bfg2, bfg2, bfg2*bv2, bfg2**2]) if self.sim_surr_fg else np.array([1, bv2, bv2, bv2**2])
+        coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
 
         cov = []  # it will be a 16 x nkbins x nkbins array to cover any possible combination of fields1 / fields2.
         # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields=[1,0]) 
@@ -738,10 +750,12 @@ class KszPipeOutdir:
         field = np.ravel(np.ravel(np.array(field1[0])[:, None] * np.array(field1[1])[None, :])[:, None] * np.ravel(np.array(field2[0])[:, None] * np.array(field2[1])[None, :])[None, :])
         return np.sum(field[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pggxpgv_cov(self, fnl=0, bv=1, bfg=0, freq=['90','150'], field=[1,0], ell1=[0, 0], ell2=[0, 1]):
+    def pggxpgv_cov(self, fnl1=0, fnl2=0, bv2=1, bfg2=0, 
+                    ell1=[0, 0], 
+                    freq2=['90','150'], field2=[1,0], ell2=[0, 1]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gg}^{surr}(k) \times P_{gv}^{surr}(k)$."""
         
-        field = self._check_field(field)
+        field2 = self._check_field(field2)
 
         suff_gal_list = ['null', 'fnl']
         idx_gal1 = [self.surr_fields[f'gal-{ell1[0]}-{suff}'] for suff in suff_gal_list]
@@ -749,17 +763,17 @@ class KszPipeOutdir:
         idx_gal3 = [self.surr_fields[f'gal-{ell2[0]}-{suff}'] for suff in suff_gal_list]
 
         suff_vel_list = ['null', 'bv', 'bfg'] if self.sim_surr_fg else ['null', 'bv']
-        idx_vr1_1 = [self.surr_fields[f'{freq[0]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]
-        idx_vr1_2 = [self.surr_fields[f'{freq[1]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]
+        idx_vr1_1 = [self.surr_fields[f'{freq2[0]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]
+        idx_vr1_2 = [self.surr_fields[f'{freq2[1]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]
 
-        coeffs1 = np.array([1, fnl, fnl, fnl**2])
-        coeffs2 = np.array([1, bv, bfg, fnl, fnl*bv, fnl*bfg]) if self.sim_surr_fg else np.array([1, bv, fnl, fnl*bv])
+        coeffs1 = np.array([1, fnl1, fnl1, fnl1**2])
+        coeffs2 = np.array([1, bv2, bfg2, fnl2, fnl2*bv2, fnl2*bfg2]) if self.sim_surr_fg else np.array([1, bv2, fnl2, fnl2*bv2])
         coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
 
         cov = []
         # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields=[1,0]) 
         for i, idx_vr in enumerate([idx_vr1_1, idx_vr1_2]):
-            if field[i] == 0:
+            if field2[i] == 0:
                 cov_tmp = np.zeros((self.nkbins, self.nkbins))  # shape (nkbins, nkbins)
             else:
                 idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal1 for jj in idx_gal2]) 
@@ -767,9 +781,18 @@ class KszPipeOutdir:
                 cov_tmp = np.sum(coeff_cov[:, None, None] * self.surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins, self.nkbins), axis=0)  # shape (nkbins, nkbins)
             cov += [cov_tmp]
 
-        return np.sum(field[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
+        return np.sum(field2[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pgvxpvv_cov(self, fnl=0, bv=1, bfg=0, ell1=[0,1], ell2=[1,1], freq1=['90','150'], field1=[1,0], freq2=[['90','150'], ['90','150']], field2=[[1,0], [1,0]]):
+    def pgvxpgg_cov(self, fnl1=0, bv1=1, bfg1=0, fnl2=0, 
+                    freq1=['90','150'], field1=[1,0], ell1=[0, 0], 
+                    ell2=[0, 1]):
+        r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gv}^{surr}(k) \times P_{gg}^{surr}(k)$."""
+        
+        return self.pggxpgv_cov(fnl1=fnl2, fnl2=fnl1, bv2=bv1, bfg2=bfg1, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1)
+
+    def pgvxpvv_cov(self, fnl1=0, bv1=1, bfg1=0, bv2=1, bfg2=0,
+                    freq1=['90','150'], field1=[1,0], ell1=[0,1], 
+                    freq2=[['90','150'], ['90','150']], field2=[[1,0], [1,0]], ell2=[1,1]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gv}^{surr}(k) \times P_{vv}^{surr}(k)$."""
         suff_gal_list = ['null', 'fnl']
         idx_gal1 = [self.surr_fields[f'gal-{ell1[0]}-{suff}'] for suff in suff_gal_list]
@@ -782,8 +805,8 @@ class KszPipeOutdir:
         idx_vr2_2_1 = [self.surr_fields[f'{freq2[1][0]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]
         idx_vr2_2_2 = [self.surr_fields[f'{freq2[1][1]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]       
 
-        coeffs1 = np.array([1, bv, bfg, fnl, fnl*bv, fnl*bfg]) if self.sim_surr_fg else np.array([1, bv, fnl, fnl*bv])
-        coeffs2 = np.array([1, bv, bfg, bv, bv**2, bv*bfg, bfg, bfg*bv, bfg**2]) if self.sim_surr_fg else np.array([1, bv, bv, bv**2])
+        coeffs1 = np.array([1, bv1, bfg1, fnl1, fnl1*bv1, fnl1*bfg1]) if self.sim_surr_fg else np.array([1, bv1, fnl1, fnl1*bv1])
+        coeffs2 = np.array([1, bv2, bfg2, bv2, bv2**2, bv2*bfg2, bfg2, bfg2*bv2, bfg2**2]) if self.sim_surr_fg else np.array([1, bv2, bv2, bv2**2])
         coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
 
         cov = []
@@ -802,27 +825,36 @@ class KszPipeOutdir:
         field = np.ravel(np.array(field1)[:, None] * np.ravel(np.array(field2[0])[:, None] * np.array(field2[1])[None, :])[None, :])
         return np.sum(field[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pggxpvv_cov(self, fnl=0, bv=1, bfg=0, ell1=[0,0], ell2=[1,1], freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]]):
+    def pvvxpgv_cov(self, bv1=1, bfg1=0, fnl2=0, bv2=1, bfg2=0, 
+                    freq1=[['90','150'], ['90','150']], field1=[[1,0], [1,0]], ell1=[1,1],
+                    freq2=['90','150'], field2=[1,0], ell2=[0,1]):
+        r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{vv}^{surr}(k) \times P_{gv}^{surr}(k)$."""
+
+        return self.pgvxpvv_cov(fnl1=fnl2, bv1=bv2, bfg1=bfg2, bv2=bv1, bfg2=bfg1, freq1=freq2, field1=field2, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1)
+
+    def pggxpvv_cov(self, fnl1=0, bv2=1, bfg2=0, 
+                    ell1=[0,0], 
+                    ell2=[1,1], freq2=[['90','150'], ['90','150']], field2=[[1,0], [1,0]]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gg}^{surr}(k) \times P_{vv}^{surr}(k)$."""
         suff_gal_list = ['null', 'fnl']
         idx_gal1 = [self.surr_fields[f'gal-{ell1[0]}-{suff}'] for suff in suff_gal_list]
         idx_gal2 = [self.surr_fields[f'gal-{ell1[1]}-{suff}'] for suff in suff_gal_list]
 
         suff_vel_list = ['null', 'bv', 'bfg'] if self.sim_surr_fg else ['null', 'bv']
-        idx_vr2_1_1 = [self.surr_fields[f'{freq[0][0]}-{ell2[0]}-{suff}'] for suff in suff_vel_list]
-        idx_vr2_1_2 = [self.surr_fields[f'{freq[0][1]}-{ell2[0]}-{suff}'] for suff in suff_vel_list]
-        idx_vr2_2_1 = [self.surr_fields[f'{freq[1][0]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]
-        idx_vr2_2_2 = [self.surr_fields[f'{freq[1][1]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]       
+        idx_vr2_1_1 = [self.surr_fields[f'{freq2[0][0]}-{ell2[0]}-{suff}'] for suff in suff_vel_list]
+        idx_vr2_1_2 = [self.surr_fields[f'{freq2[0][1]}-{ell2[0]}-{suff}'] for suff in suff_vel_list]
+        idx_vr2_2_1 = [self.surr_fields[f'{freq2[1][0]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]
+        idx_vr2_2_2 = [self.surr_fields[f'{freq2[1][1]}-{ell2[1]}-{suff}'] for suff in suff_vel_list]       
 
-        coeffs1 = np.array([1, fnl, fnl, fnl**2])
-        coeffs2 = np.array([1, bv, bfg, bv, bv**2, bv*bfg, bfg, bfg*bv, bfg**2]) if self.sim_surr_fg else np.array([1, bv, bv, bv**2])
+        coeffs1 = np.array([1, fnl1, fnl1, fnl1**2])
+        coeffs2 = np.array([1, bv2, bfg2, bv2, bv2**2, bv2*bfg2, bfg2, bfg2*bv2, bfg2**2]) if self.sim_surr_fg else np.array([1, bv2, bv2, bv2**2])
         coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
 
         cov = []
-        # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields=[1,0]) 
+        # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields2=[1,0]) 
         for i, idx_vr1 in enumerate([idx_vr2_1_1, idx_vr2_1_2]):
             for j, idx_vr2 in enumerate([idx_vr2_2_1, idx_vr2_2_2]):
-                if field[0][i] == 0 or field[1][j] == 0:
+                if field2[0][i] == 0 or field2[1][j] == 0:
                     cov_tmp = np.zeros((self.nkbins, self.nkbins))  # shape (nkbins, nkbins)
                 else:
                     idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal1 for jj in idx_gal2]) 
@@ -830,8 +862,14 @@ class KszPipeOutdir:
                     cov_tmp = np.sum(coeff_cov[:, None, None] * self.surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins, self.nkbins), axis=0)  # shape (nkbins, nkbins)
                 cov += [cov_tmp]
 
-        field = np.ravel(np.array(field[0])[:, None] * np.array(field[1])[None, :])
+        field = np.ravel(np.array(field2[0])[:, None] * np.array(field2[1])[None, :])
         return np.sum(field[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
+
+    def pvvxpgg_cov(self, fnl2=0, bv1=1, bfg1=0, 
+                    ell1=[1,1], freq1=[['90','150'], ['90','150']], field1=[[1,0], [1,0]],
+                    ell2=[0,0]):
+        r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{vv}^{surr}(k) \times P_{gg}^{surr}(k)$."""
+        return self.pggxpvv_cov(fnl1=fnl2, bv2=bv1, bfg2=bfg1, ell1=ell2, ell2=ell1, freq2=freq1, field2=field1)
 
     def _pgg_rms(self, fnl=0, ell=[0, 0]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array, containing sqrt(Var($P_{gg}^{surr}(k)$))."""

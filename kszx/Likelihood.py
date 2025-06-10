@@ -18,16 +18,25 @@ class Likelihood:
         
         name_params should be in params !
         
-        first_kbin and last_kbin --> data[first_kbin, last_kbin] if None, None, use all the data vector !
+        first_kbin and last_kbin should have the same key entries than fields. --> data[first_kbin, last_kbin] if None, None, use all the data vector !
         
         """
-
         assert isinstance(pout, KszPipeOutdir)
+
+        # check if we have first_kbin and last_kbin for each field:
+        for name in fields: 
+            assert (name in first_kbin) and (name in last_kbin)
+
+        # check if parameters used for each field is defined in params:
+        for name in fields: 
+            for nn in fields[name]['name_params']:
+                assert fields[name]['name_params'][nn] in params
 
         self.pout = pout
         self.first_kbin = first_kbin
         self.last_kbin = last_kbin
         self.k = np.concatenate([pout.k[first_kbin[name]:last_kbin[name]] for name in fields])
+        self.nk = [pout.k[first_kbin[name]:last_kbin[name]].size for name in fields]
         self.fields = fields
 
         self.params = params
@@ -56,12 +65,11 @@ class Likelihood:
             elif field_split[0] == 'gv':
                 data += [self.pout.pgv_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
             elif field_split[0] == 'vv':
-                data += [self.pout.pgv_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
+                data += [self.pout.pvv_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
             else:
                 print(f"{field_split} in not in gg, gv, vv")
                 sys.exit(2)
         self.data = np.concatenate(data)
-
     
     def mean_and_cov(self, grad=False, cov_fix_params=False, **params):
         r""" TODO. """
@@ -70,19 +78,18 @@ class Likelihood:
         for field in self.fields: 
             field_split = field.split('_')
             ff = self.fields[field].copy()
+
+            # use the value of the params to evaluate the theory:
             name_params = ff.pop('name_params')
+            for nn in name_params:
+                ff.update({nn: params[name_params[nn]]})
+
             if field_split[0] == 'gg':
-                ff.update({'fnl': params[name_params['fnl']]})
                 mu += [self.pout.pgg_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
             elif field_split[0] == 'gv':
-                ff.update({'fnl': params[name_params['fnl']]})
-                ff.update({'bv': params[name_params['bv']]})
-                ff.update({'bfg': params[name_params['bfg']]})
                 mu += [self.pout.pgv_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
             elif field_split[0] == 'vv':
-                ff.update({'bv': params[name_params['bv']]})
-                ff.update({'bfg': params[name_params['bfg']]})
-                mu += [self.pout.pgv_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
+                mu += [self.pout.pvv_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
         mu = np.concatenate(mu)
 
         if cov_fix_params:
@@ -91,62 +98,40 @@ class Likelihood:
             cov = []
             for field1 in self.fields: 
                 field1_split = field1.split('_')
-                name_params1 = self.fields[field1]['name_params']
                 for field2 in self.fields: 
                     field2_split = field2.split('_')
-                    name_params2 = self.fields[field2]['name_params'] 
 
                     ff = {f"{key}1": value for key, value in self.fields[field1].items()}
                     ff.update({f"{key}2": value for key, value in self.fields[field2].items()})
-                    _ = ff.pop('name_params1')
-                    _ = ff.pop('name_params2')
+                    
+                    # use the value of the params to evaluate the covariance:
+                    name_params1 = ff.pop('name_params1')
+                    name_params2 = ff.pop('name_params2')
+                    for nn in name_params1: ff.update({nn+'1': params[name_params1[nn]]})
+                    for nn in name_params2: ff.update({nn+'2': params[name_params2[nn]]})
 
                     # not super elegant... 
                     if field1_split[0] == 'gg':
-                        ff.update({'fnl1': params[name_params1['fnl']]})
                         if field2_split[0] == 'gg':
-                            ff.update({'fnl2': params[name_params2['fnl']]})
                             cov = [self.pout.pggxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
                         elif fiel+d2_split[0] == 'gv':
-                            ff.update({'fnl2': params[name_params2['fnl']]})
-                            ff.update({'bv2': params[name_params2['bv']]})
-                            ff.update({'bfg2': params[name_params2['bfg']]})
                             cov += [self.pout.pggxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
                         elif field2_split[0] == 'vv':
-                            ff.update({'bv2': params[name_params2['bv']]})
-                            ff.update({'bfg2': params[name_params2['bfg']]})
                             cov += [self.pout.pggxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
                     elif field1_split[0] == 'gv':
-                        ff.update({'fnl1': params[name_params1['fnl']]})
-                        ff.update({'bv1': params[name_params1['bv']]})
-                        ff.update({'bfg1': params[name_params1['bfg']]})
                         if field2_split[0] == 'gg':
-                            ff.update({'fnl2': params[name_params2['fnl']]})
                             cov += [self.pout.pgvxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
                         elif field2_split[0] == 'gv':
-                            ff.update({'fnl2': params[name_params2['fnl']]})
-                            ff.update({'bv2': params[name_params2['bv']]})
-                            ff.update({'bfg2': params[name_params2['bfg']]})
                             cov += [self.pout.pgvxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
                         elif field2_split[0] == 'vv':
-                            ff.update({'bv2': params[name_params2['bv']]})
-                            ff.update({'bfg2': params[name_params2['bfg']]})
                             cov += [self.pout.pgvxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
                     elif field1_split[0] == 'vv':
-                        ff.update({'bv1': params[name_params1['bv']]})
-                        ff.update({'bfg1': params[name_params1['bfg']]})
                         if field2_split[0] == 'gg':
-                            ff.update({'fnl2': params[name_params2['fnl']]})
                             cov += [self.pout.pvvxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
                         elif field2_split[0] == 'gv':
-                            ff.update({'fnl2': params[name_params2['fnl']]})
-                            ff.update({'bv2': params[name_params2['bv']]})
-                            ff.update({'bfg2': params[name_params2['bfg']]})
                             cov += [self.pout.pvvxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
                         elif field2_split[0] == 'vv':
-                            ff.update({'bv2': params[name_params2['bv']]})
-                            ff.update({'bfg2': params[name_params2['bfg']]})
-                            cov += [self.pout.pvvxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
+                            cov += [self.pout.pvvxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
             cov = np.block([[cov[i*len(self.fields) + j] for j in range(len(self.fields))] for i in range(len(self.fields))])
         
         if not grad:
@@ -158,7 +143,6 @@ class Likelihood:
             mu_grad = None
             cov_grad = None
             return mu, cov, mu_grad, cov_grad
-
 
     def log_likelihood(self, *params):
         r""" """
@@ -202,7 +186,7 @@ class Likelihood:
 
         return logL
 
-    def run_profiling(self, nprofiles=5, fn_profile=None):
+    def run_profiling(self, nprofiles=5, fn_profile=None, verbose=True):
         r"""Returns bestfit value for self.params after nprofiles different profiling with scipy.optimize.minimize.  """
 
         x0 = np.zeros((nprofiles, len(self.params)))
@@ -218,12 +202,11 @@ class Likelihood:
         # select the bestfit with the lowest log_likelihood:
         sel_min = np.argmin([result.fun for result in results])
         self.result = results[sel_min]
-        print(self.result)
+        if verbose: print(self.result)
         self.bestfit = {key: self.result.x[i] for i, key in enumerate(self.params)}
         if fn_profile is not None: np.save(self.result, fn_profile)
 
         return self.bestfit      
-            
 
     def run_mcmc(self, nwalkers=8, nsamples=10000, discard=1000, thin=5, fn_chain=None):
         r"""Initializes ``self.samples`` to an array of shape (N,len(self.params)) where N is large."""
@@ -244,12 +227,10 @@ class Likelihood:
         if fn_chain is not None: 
             print(f'Chain is saved in {fn_chain}')
             np.save(self.samples, fn_chain)
-
     
     def read_mcmc(self, fn_chain):
         """ Read mcmc already run """
         self.samples = np.load(fn_chain)
-
 
     def show_mcmc(self, add_expected_value=True, legend_label=None, fn_fig=None):
         r"""Makes a corner plot from MCMC results. Intended to be called from jupyter."""
@@ -290,6 +271,30 @@ class Likelihood:
         if fn_fig is not None: plt.savefig(fn_fig)
         plt.show()
 
+    def show_table(self, sigfig=2, add_bestfit=False, fn_tab=None):
+        from tabulate import tabulate
+
+        if add_bestfit:
+            tab = [["Parameter", "BestFit", "Mean", "Std", "Interval:1sigma"]]
+            for i, name in enumerate(self.params):
+                mean, std = np.mean(self.samples[:,i]), np.std(self.samples[:,i])
+                lower, median, upper = np.percentile(self.samples[:,i], [15.87, 50, 84.13]) 
+                tab += [[name, utils.std_notation(self.bestfit[name], sigfig), utils.std_notation(mean, sigfig), utils.std_notation(std, sigfig), 
+                utils.std_notation(lower-mean, sigfig) + "/" + utils.std_notation(upper-mean, sigfig)]] 
+        else:
+            tab = [["Parameter", "Mean", "Std", "Interval:1sigma"]]
+            for i, name in enumerate(self.params):
+                mean, std = np.mean(self.samples[:,i]), np.std(self.samples[:,i])
+                lower, median, upper = np.percentile(self.samples[:,i], [15.87, 50, 84.13]) 
+                tab += [[name, utils.std_notation(mean, sigfig), utils.std_notation(std, sigfig), 
+                utils.std_notation(lower-mean, sigfig) + "/" + utils.std_notation(upper-mean, sigfig)]] 
+
+        print(tabulate(tab, headers="firstrow", tablefmt='rounded_outline'))
+        if fn_tab is not None: np.savetxt(tab, fn_tab)
+
+        return tab
+
+    def show_quantile(self):
         qlevels = [0.025, 0.16, 0.5, 0.84, 0.975]
         for i, key in enumerate(self.params):
             quantiles = np.quantile(self.samples[:,i], qlevels)
@@ -318,7 +323,7 @@ class Likelihood:
     def analyze_chi2(self, params=None, ddof=None):
         r"""Computes a $\chi^2$ statistic, which compares data to model with given set of parameters.
 
-        Returns ($\chi^2$, $N_{dof}$, $p$-value).
+        Returns ($\chi^2$, $N_{dof}$, $\chi^2$ / N_{dof}$, $p$-value).
 
         If params is None use the self.bestfit as default. params can be either a list of value or a dictionary.
 
@@ -332,13 +337,11 @@ class Likelihood:
         
         mean, cov = self.mean_and_cov(**params)
 
-        if ddof is None:
-            ddof = 1 if (fnl != 0) else 0
-            ddof += np.count_nonzero(bv)
+        if ddof is None: ddof = len(params)
         
         x = self.data - mean
         chi2 = np.dot(x, np.linalg.solve(cov,x))
         ndof = self.data.size - ddof
         pte = scipy.stats.chi2.sf(chi2, ndof)
         
-        return chi2, ndof, pte
+        return chi2, ndof, chi2 / ndof, pte

@@ -573,3 +573,75 @@ def contract_axis(arr, weights, axis):
     return np.dot(arr, weights)
 
 
+def std_notation(value, sigfigs, positive_sign=False):
+    """
+    Standard notation (US version).
+    Return a string corresponding to value with the number of significant digits ``sigfigs``.
+
+    Exemple: std_notation(5, 2) -> '5.0', std_notation(5.36, 2) -> '5.4', std_notation(5360, 2) -> '5400', std_notation(0.05363, 3) -> '0.0536'
+
+    Copy / Paste from https://github.com/cosmodesi/desilike/blob/78738f5919ce77798beed444f650457e1649b0b8/desilike/utils.py#L834
+
+    Created by William Rusnack:
+      github.com/BebeSparkelSparkel
+      linkedin.com/in/williamrusnack/
+      williamrusnack@gmail.com
+    """
+    import math
+
+    def _number_profile(value, sigfigs):
+        """
+        Return elements to turn number into string representation.
+
+        Parameters
+        ----------
+        value : float
+            Number.
+        sigfigs : int
+            Number of significant digits.
+
+        Returns
+        -------
+        sig_digits : string
+            Significant digits.
+        power : int
+            10s exponent to get the dot to the proper location in the significant digits
+        is_neg : bool
+            ``True`` if value is < 0 else ``False``
+        """
+        if value == 0:
+            sig_digits = '0' * sigfigs
+            power = -(1 - sigfigs)
+            is_neg = False
+        else:
+            is_neg = value < 0
+            if is_neg: value = abs(value)
+            power = -1 * math.floor(math.log10(value)) + sigfigs - 1
+            sig_digits = str(int(round(abs(value) * 10.0**power)))
+        return sig_digits, int(-power), is_neg
+
+    def _place_dot(digits, power):
+        """
+        Place dot in the correct spot, given by integer ``power`` (starting from the right of ``digits``)
+        in the string ``digits``.
+        If the dot is outside the range of the digits zeros will be added.
+
+        Exemple: _place_dot('123', 2) -> '12300', _place_dot('123', -2) -> '1.23', _place_dot('123', 3) -> '0.123', _place_dot('123', 5) -> '0.00123'
+        """
+        if power > 0: out = digits + '0' * power
+        elif power < 0:
+            power = abs(power)
+            sigfigs = len(digits)
+            if power < sigfigs:
+                out = digits[:-power] + '.' + digits[-power:]
+            else:
+                out = '0.' + '0' * (power - sigfigs) + digits
+        else:
+            out = digits + ('.' if digits[-1] == '0' else '')
+        return out
+
+
+    sig_digits, power, is_neg = _number_profile(value, sigfigs)
+    if is_neg and all(d == '0' for d in sig_digits): is_neg = False
+
+    return ('-' if is_neg else '+' if positive_sign else '') + _place_dot(sig_digits, power)

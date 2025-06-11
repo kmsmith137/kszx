@@ -114,7 +114,7 @@ class Likelihood:
                     if field1_split[0] == 'gg':
                         if field2_split[0] == 'gg':
                             cov = [self.pout.pggxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
-                        elif fiel+d2_split[0] == 'gv':
+                        elif field2_split[0] == 'gv':
                             cov += [self.pout.pggxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
                         elif field2_split[0] == 'vv':
                             cov += [self.pout.pggxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]

@@ -170,8 +170,8 @@ def read_fits_catalog(filename, name=None):
         catalog.add_column('z', f[1].read('Z'))
         catalog.add_column('weight', f[1].read('WEIGHT'))
         catalog.add_column('wfkp', f[1].read('WEIGHT_FKP'))
-        catalog.add_column('wcp', f[1].read('WEIGHT_COMP'))   # FIXME is this the same as SDSS WEIGHT_CP?
-        catalog.add_column('wzf', f[1].read('WEIGHT_ZFAIL'))  # FIXME is this the same as SDSS WEIGHT_NOZ?
+        catalog.add_column('wcp', f[1].read('WEIGHT_COMP'))   
+        catalog.add_column('wzf', f[1].read('WEIGHT_ZFAIL'))
         catalog.add_column('wsys', f[1].read('WEIGHT_SYS'))
 
     catalog._announce_file_read()

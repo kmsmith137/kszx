@@ -874,12 +874,12 @@ class KszPipeOutdir:
     def _pgg_rms(self, fnl=0, ell=[0, 0]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array, containing sqrt(Var($P_{gg}^{surr}(k)$))."""
         assert self.nsurr >= 2
-        return np.sqrt(np.var(self._pgg_surr(fnl=0, ell=[0, 0]), axis=0))
+        return np.sqrt(np.var(self._pgg_surr(fnl=fnl, ell=ell), axis=0))
 
     def _pgv_rms(self, fnl=0, bv=1, bfg=0, freq=['90','150'], field=[1, 0], ell=[0, 1]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array containing sqrt(Var($P_{gv}^{surr}(k)$))."""
         assert self.nsurr >= 2
-        return np.sqrt(np.var(self._pgv_surr(fnl=0, bv=1, bfg=0, freq=['90','150'], field=[1,0], ell=[0, 1]), axis=0))
+        return np.sqrt(np.var(self._pgv_surr(fnl=fnl, bv=bv, bfg=bfg, freq=freq, field=field, ell=ell), axis=0))
 
     def _pvv_rms(self, bv=1, bfg=0, freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]], ell=[1,1]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array containing sqrt(var($P_{vv}^{data}(k)$))"""

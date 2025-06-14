@@ -554,7 +554,7 @@ class KszPipeOutdir:
                 sys.exit(12)
         elif style == 'gv':
             if ell == [0,0]:
-                print('Here we neglect the RSD from bfg for now !!! NEED TO BE FIXED')
+                #print('Here we neglect the RSD from bfg for now !!! NEED TO BE FIXED')
                 b1_rsd = b1 + 1/3*self.f
             elif ell == [0,1]:
                 b1_rsd = b1 + 3/5*self.f
@@ -687,9 +687,9 @@ class KszPipeOutdir:
         idx_gal_21 = [self.surr_fields[f'gal-{ell2[0]}-{suff}'] for suff in self.suff_gal_list]
         idx_gal_22 = [self.surr_fields[f'gal-{ell2[1]}-{suff}'] for suff in self.suff_gal_list]
 
-        coeffs1 = np.array([sn1, self.b1_rsd(b11, ell, style='gg'), fnl1*(b11 - self.p)])
+        coeffs1 = np.array([sn1, self.b1_rsd(b11, ell1, style='gg'), fnl1*(b11 - self.p)])
         coeffs1 = np.ravel(coeffs1[:,None]*coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_11)*len(idx_gal_12), )
-        coeffs2 = np.array([1, self.b1_rsd(b12, ell, style='gg'), fnl2*(b12 - self.p)])
+        coeffs2 = np.array([1, self.b1_rsd(b12, ell2, style='gg'), fnl2*(b12 - self.p)])
         coeffs2 = np.ravel(coeffs2[:,None]*coeffs2[None,:])
         # array with all the coefficiens !
         coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:]) # shape (len(idx_gal_21)*len(idx_gal_22)**2, )
@@ -793,7 +793,7 @@ class KszPipeOutdir:
         idx_vr1_1 = [self.surr_fields[f'{freq2[0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr1_2 = [self.surr_fields[f'{freq2[1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
 
-        coeffs1 = np.array([sn1, self.b1_rsd(b11, ell, style='gg'), fnl1*(b11 - self.p)])
+        coeffs1 = np.array([sn1, self.b1_rsd(b11, ell1, style='gg'), fnl1*(b11 - self.p)])
         coeffs1 = np.ravel(coeffs1[:,None] * coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_11)*len(idx_gal_12), )
         coeffs2 = np.ravel(np.array([sn2, self.b1_rsd(b12, ell2, style='gv'), fnl2*(b12 - self.p)])[:,None] * (np.array([1, bv2, bfg2]) if self.sim_surr_fg else np.array([1, bv2]))[None,:])
         coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
@@ -871,7 +871,7 @@ class KszPipeOutdir:
         idx_vr2_2_1 = [self.surr_fields[f'{freq2[1][0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr2_2_2 = [self.surr_fields[f'{freq2[1][1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]       
 
-        coeffs1 = np.array([sn1, self.b1_rsd(b11, ell, style='gg'), fnl1*(b11 - self.p)])
+        coeffs1 = np.array([sn1, self.b1_rsd(b11, ell1, style='gg'), fnl1*(b11 - self.p)])
         coeffs1 = np.ravel(coeffs1[:,None] * coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_1)*len(idx_gal_1), )
         coeffs2 = np.array([1, bv2, bfg2, bv2, bv2**2, bv2*bfg2, bfg2, bfg2*bv2, bfg2**2]) if self.sim_surr_fg else np.array([1, bv2, bv2, bv2**2])
         coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )

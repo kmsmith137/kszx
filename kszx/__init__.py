@@ -28,7 +28,7 @@ from .Cosmology import Cosmology, CosmologicalParams
 # "High-level" classes.
 from .CmbClFitter import CmbClFitter
 from .KszPipe import KszPipe, KszPipeOutdir
-from .PgvLikelihood import PgvLikelihood
+from .Likelihood import Likelihood
 from .RegulatedDeconvolver import RegulatedDeconvolver
 from .SurrogateFactory import SurrogateFactory
 

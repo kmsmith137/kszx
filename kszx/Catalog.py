@@ -91,6 +91,12 @@ class Catalog:
         self.col_names.append(col_name)
         setattr(self, col_name, col_data)
 
+    
+    def get_column(self, col_name):
+        """ Return the data in col_name. Useful to access the column with variable. """
+        assert col_name in self.col_names
+        return getattr(self, col_name)
+
 
     def remove_column(self, col_name):
         r"""Removes an existing column from the catalog."""

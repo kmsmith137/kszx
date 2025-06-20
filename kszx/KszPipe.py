@@ -89,18 +89,16 @@ class KszPipe:
             self.nzbins_gal = params['nzbins_gal']
             self.nzbins_vr = params['nzbins_vr']
 
-            self.kmax = params['kmax']
-            self.nkbins = params['nkbins']            
-            self.kbin_edges = np.linspace(0, self.kmax, self.nkbins+1)
-            self.kbin_centers = (self.kbin_edges[1:] + self.kbin_edges[:-1]) / 2.
+            kmin, kmax, kstep = params['kmin'], params['kmax'], params['kstep']
+            self.kbin_edges = [np.arange(kmin[i], kmax[i], kstep[i]) for i in range(len(kmin))]
 
         self.box = io_utils.read_pickle(f'{input_dir}/bounding_box.pkl')
         self.kernel = 'cubic'   # hardcoded for now
         self.deltac = 1.68      # hardcoded for now
 
-        self.pk_data_filename = f'{output_dir}/pk_data.npy'
-        self.pk_surr_filename = f'{output_dir}/pk_surrogates.npy'
-        self.pk_single_surr_filenames = [f'{output_dir}/tmp/pk_surr_{i}.npy' for i in range(self.nsurr)]
+        self.pk_data_filename = [f'{output_dir}/pk_data_binning{i}.npy' for i in range(len(self.kbin_edges))]
+        self.pk_surr_filename = [f'{output_dir}/pk_surrogates_binning{i}.npy' for i in range(len(self.kbin_edges))]
+        self.pk_single_surr_filenames = [[f'{output_dir}/tmp/pk_surr_{j}_binning{i}.npy' for i in range(len(self.kbin_edges))] for j in range(self.nsurr)]
 
     @functools.cached_property
     def cosmo(self):
@@ -192,11 +190,13 @@ class KszPipe:
           - If ``force=True``, then this function recomputes $P(k)$, even if it is on disk from a previous pipeline run.
         """
         
-        if (not force) and os.path.exists(self.pk_data_filename):
-            return io_utils.read_npy(self.pk_data_filename)
+        if (not force) and all([os.path.exists(fn) for fn in self.pk_data_filename]):
+            pks = [io_utils.read_npy(fn) for fn in self.pk_data_filename]
+            if len(self.pk_data_filename) == 1: pks = pks[0]
+            return pks
 
         if not (run or force):
-            raise RuntimeError(f'KszPipe.get_pk_data2(): run=force=False was specified, and file {self.pk_data_filename} not found')
+            raise RuntimeError(f'KszPipe.get_pk_data(): run=force=False was specified, and file {self.pk_data_filename} not found')
         
         print('get_pk_data(): running\n', end='')
         
@@ -225,15 +225,18 @@ class KszPipe:
         w = np.array(w)
         wf = self.window_function[idx,:][:,idx] * w[:, None] * w[None, :]
 
-        # Estimate power spectra. and normalize by dividing by window function.
-        pk = core.estimate_power_spectrum(self.box, fourier_space_maps, self.kbin_edges)
-        pk /= wf[:, :, None]
-
-        # Save 'pk_data.npy' to disk. Note that the file format is specified here:
-        # https://kszx.readthedocs.io/en/latest/kszpipe.html#kszpipe-details
-        io_utils.write_npy(self.pk_data_filename, pk)
+        pks = []
+        for i, kbin_edges in enumerate(self.kbin_edges):
+            # Estimate power spectra. and normalize by dividing by window function.
+            pk = core.estimate_power_spectrum(self.box, fourier_space_maps, kbin_edges)
+            pk /= wf[:, :, None]
+            # Save 'pk_data.npy' to disk. Note that the file format is specified here:
+            # https://kszx.readthedocs.io/en/latest/kszpipe.html#kszpipe-details
+            io_utils.write_npy(self.pk_data_filename[i], pk)
+            pks += [pk]
         
-        return pk
+        if len(self.pk_data_filename): pks = pks[0]
+        return pks
 
     def get_pk_surrogate(self, isurr, run=False, force=False):
         r"""Returns a shape (A,A,nkbins) array, and saves it in ``pipeline_outdir/tmp/pk_surr_{isurr}.npy``,
@@ -253,9 +256,10 @@ class KszPipe:
         """
 
         fname = self.pk_single_surr_filenames[isurr]
-        
-        if (not force) and os.path.exists(fname):
-            return io_utils.read_npy(fname)
+        if (not force) and all([os.path.exists(fn) for fn in fname]):
+            pks = [io_utils.read_npy(fn) for fn in fname]
+            if len(fname) == 1: pks = pks[0]
+            return pks
 
         if not (run or force):
             raise RuntimeError(f'KszPipe.get_pk_surrogate(): run=False was specified, and file {fname} not found')
@@ -325,12 +329,16 @@ class KszPipe:
         # Expand window function from shape (3,3) to shape (15,15).
         wf = wf[idx,:][:,idx]
 
-        # Estimate power spectra. and normalize by dividing by window function.
-        pk = core.estimate_power_spectrum(self.box, fourier_space_maps, self.kbin_edges)
-        pk /= wf[:,:,None]
+        pks = []
+        for i, kbin_edges in enumerate(self.kbin_edges):
+            # Estimate power spectra. and normalize by dividing by window function.
+            pk = core.estimate_power_spectrum(self.box, fourier_space_maps, kbin_edges)
+            pk /= wf[:,:,None]
 
-        io_utils.write_npy(fname, pk)
-        return pk
+            io_utils.write_npy(fname[i], pk)
+            pks += [pk]
+        if len(fname): pks = pks[0]
+        return pks
 
     def get_pk_surrogates(self):
         """Returns the concatenation of all surrogates generated with get_pk_surrogate(), and saves it in ``pipeline_outdir/pk_surrogates.npy``.
@@ -338,21 +346,24 @@ class KszPipe:
         This function only reads files from disk -- it does not run the pipeline.
         To run the pipeline, use :meth:`~kszx.KszPipe.run()`.
         """
-        
-        if os.path.exists(self.pk_surr_filename):
-            return io_utils.read_npy(self.pk_surr_filename)
 
-        if not all(os.path.exists(f) for f in self.pk_single_surr_filenames):
+        if all([os.path.exists(fn) for fn in self.pk_surr_filename]):
+            pks = [io_utils.read_npy(fn) for fn in self.pk_surr_filename]
+            if len(self.pk_surr_filename) == 1: pks = pks[0]
+            return pks
+
+        if not all([all([os.path.exists(ff) for ff in fn_single_surr]) for fn_single_surr in self.pk_single_surr_filenames]):
             raise RuntimeError(f'KszPipe.read_pk_surrogates(): necessary files do not exist; you need to call KszPipe.run()')
 
-        pk = np.array([io_utils.read_npy(f) for f in self.pk_single_surr_filenames])
-
-        # Save 'pk_surrogates.npy' to disk. Note that the file format is specified here:
-        # https://kszx.readthedocs.io/en/latest/kszpipe.html#kszpipe-details
-        
-        io_utils.write_npy(self.pk_surr_filename, pk)
-        
-        return pk
+        pks = []
+        for i, fn_surr in enumerate(self.pk_surr_filename):
+            pk = np.array([io_utils.read_npy(f[i]) for f in self.pk_single_surr_filenames])
+            # Save 'pk_surrogates.npy' to disk. Note that the file format is specified here:
+            # https://kszx.readthedocs.io/en/latest/kszpipe.html#kszpipe-details
+            io_utils.write_npy(fn_surr, pk)
+            pks += [pk]
+        if len(self.pk_surr_filename) == 1: pks = pks[0]
+        return pks
 
     def run(self, processes):
         """Runs pipeline and saves results to disk, skipping results already on disk from previous runs.
@@ -407,9 +418,9 @@ class KszPipe:
                         print(f"  {freq}-{spin}-bfg: {idx}  # derivative (dSv_freq/dbfg) with spin={spin}", file=f)
                         idx += 1
 
-        have_data = os.path.exists(self.pk_data_filename)
-        have_surr = os.path.exists(self.pk_surr_filename)
-        missing_surrs = [] if have_surr else [i for (i,f) in enumerate(self.pk_single_surr_filenames) if not os.path.exists(f)]
+        have_data = all([os.path.exists(fn) for fn in self.pk_data_filename])
+        have_surr = all([os.path.exists(fn) for fn in self.pk_surr_filename])
+        missing_surrs = [] if have_surr else [i for (i,f) in enumerate(self.pk_single_surr_filenames) if not all([os.path.exists(fn) for fn in f])]
 
         if (not have_surr) and (len(missing_surrs) == 0):
             self.get_pk_surrogates()   # creates "top-level" file
@@ -445,7 +456,7 @@ class KszPipe:
 ####################################################################################################
 
 class KszPipeOutdir:
-    def __init__(self, dirname, nsurr=None, p=1.0):
+    def __init__(self, dirname, nsurr=None, p=1.0, binning={'gg':0, 'gv':0, 'vv':0}):
         r"""A helper class for loading and processing output files from ``class KszPipe``.
 
         Note: for MCMCs and parameter fits, there is a separate class :class:`~kszx.PgvLikelihood`.
@@ -472,36 +483,40 @@ class KszPipeOutdir:
         with open(filename, 'r') as f:
             params = yaml.safe_load(f)
 
-        kmax = params['kmax']
-        nkbins = params['nkbins']
-        
-        kbin_edges = np.linspace(0, kmax, nkbins+1)
-        kbin_centers = (kbin_edges[1:] + kbin_edges[:-1]) / 2.
+        kmin, kmax, kstep = params['kmin'], params['kmax'], params['kstep']
+        kbin_edges = [np.arange(kmin[i], kmax[i], kstep[i]) for i in range(len(kmin))]
+        kbin_centers = [(kbin_edges[i][1:] + kbin_edges[i][:-1]) / 2 for i in range(len(kmin))]
+        nkbins = [kbin_centers[i].size for i in range(len(kmin))]
 
         data_fields = params['data_fields']
-        pk_data = io_utils.read_npy(f'{dirname}/pk_data.npy')
-        if pk_data.shape != (len(data_fields), len(data_fields), nkbins):
-            raise RuntimeError(f'Got {pk_data.shape=}, expected ({len(data_fields)},{len(data_fields)},nkbins) where {nkbins=}')
+        pk_data = [io_utils.read_npy(f'{dirname}/pk_data_binning{i}.npy') for i in range(len(kbin_edges))]
+        for i, pk_d in enumerate(pk_data):
+            if pk_d.shape != (len(data_fields), len(data_fields), nkbins[i]):
+                raise RuntimeError(f'Got {pk_d.shape=}, expected ({len(data_fields)},{len(data_fields)},nkbins) where {nkbins[i]=}')
 
         surr_fields = params['surrogate_fields']
         if nsurr is None:
-            pk_surr = io_utils.read_npy(f'{dirname}/pk_surrogates.npy')
-            if (pk_surr.ndim != 4) or (pk_surr.shape[1:] != (len(surr_fields),len(surr_fields),nkbins)):
-                raise RuntimeError(f'Got {pk_surr.shape=}, expected (nsurr,{len(surr_fields)},{len(surr_fields)},nkbins) where {nkbins=}')
+            pk_surr = [io_utils.read_npy(f'{dirname}/pk_surrogates_binning{i}.npy') for i in range(len(kbin_edges))]
+            for i, pk_s in enumerate(pk_surr):
+                if (pk_s.ndim != 4) or (pk_s.shape[1:] != (len(surr_fields),len(surr_fields),nkbins[i])):
+                    raise RuntimeError(f'Got {pk_s.shape=}, expected (nsurr,{len(surr_fields)},{len(surr_fields)},nkbins) where {nkbins[i]=}')
         else:
-            pk_surr = [ ]
-            for i in range(nsurr):
-                pk_surrogate = io_utils.read_npy(f'{dirname}/tmp/pk_surr_{i}.npy')
-                if pk_surrogate.shape != (len(surr_fields), len(surr_fields), nkbins):
-                    raise RuntimeError(f'Got {pk_surrogate.shape=}, expected ({len(surr_fields)},{len(surr_fields)},nkbins) where {nkbins=}')
-                pk_surr.append(pk_surrogate)
-            pk_surr = np.array(pk_surr)
-            pk_surr = np.reshape(pk_surr, (nsurr, len(surr_fields), len(surr_fields), nkbins))   # needed if nsurr==0
-
-        self.k = kbin_centers
+            pk_surr = []
+            for j in range(len(kbin_edges)):
+                pk_surr_tmp = []
+                for i in range(nsurr):
+                    pk_surrogate = io_utils.read_npy(f'{dirname}/tmp/pk_surr_{i}_binning{j}.npy')
+                    if pk_surrogate.shape != (len(surr_fields), len(surr_fields), nkbins[j]):
+                        raise RuntimeError(f'Got {pk_surrogate.shape=}, expected ({len(surr_fields)},{len(surr_fields)},nkbins) where {nkbins[j]=}')
+                    pk_surr_tmp += [pk_surrogate]
+                pk_surr_tmp = np.array(pk_surr_tmp)
+                pk_surr_tmp = np.reshape(pk_surr_tmp, (nsurr, len(surr_fields), len(surr_fields), nkbins[j]))   # needed if nsurr==0
+                pk_surr += [pk_surr_tmp]
+        
+        self.binning = binning 
+        self.k = {key: kbin_centers[val] for key, val in binning.items()}
         self.nkbins = nkbins
-        self.kmax = kmax
-        self.dk = kmax / nkbins
+        self.kmin, self.kmax, self.kstep = kmin, kmax, kstep
 
         self.cmb_fields = params['cmb_fields']
         self.spin_gal = params['estimate_spin_gal']
@@ -517,19 +532,32 @@ class KszPipeOutdir:
         self.p = p
         self.f = self.cosmo.frsd(z=params['zeff'])
 
-        self.pk_surr = np.array(pk_surr)
-        self.nsurr = self.pk_surr.shape[0]
+        self.pk_surr = pk_surr
+        self.nsurr = self.pk_surr[0].shape[0]
 
         # Precompute for each surrogate field dedicated mean and covariance for speed up purpose.
-        mean = np.mean(self.pk_surr, axis=0)
-        self.surr_mean = np.ascontiguousarray(mean) # make contiguous
+        self.surr_mean = [np.ascontiguousarray(np.mean(self.pk_surr[i], axis=0)) for i in range(len(self.nkbins))] # make contiguous
 
         nsurr_fields = len(surr_fields)
         self.nsurr_fields = nsurr_fields
-        cov = np.cov(self.pk_surr.reshape(self.nsurr, nsurr_fields*nsurr_fields*nkbins), rowvar=False)
-        cov = cov.reshape((nsurr_fields*nsurr_fields, nkbins, nsurr_fields*nsurr_fields, nkbins))
-        cov = cov.transpose(0, 2, 1, 3)  # reorder axes to have cov matrix in the last two indices for each field.
-        self.surr_cov = np.ascontiguousarray(cov) # make contiguous
+
+        cov = {}
+        to_compute = np.unique([val for val in self.binning.values()])
+        for i in to_compute:
+            for j in to_compute:
+                if j == i:
+                    cov_tmp = np.cov(self.pk_surr[i].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[i]), rowvar=False)
+                else:
+                    # not optimal but do it only once.
+                    cov_tmp = np.cov(self.pk_surr[i].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[i]), self.pk_surr[j].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[j]), rowvar=False)
+                    #cov_tmp = cov_tmp[nsurr_fields*nsurr_fields*self.nkbins[i]:, :nsurr_fields*nsurr_fields*self.nkbins[i]]
+                    cov_tmp = cov_tmp[:nsurr_fields*nsurr_fields*self.nkbins[i], nsurr_fields*nsurr_fields*self.nkbins[i]:]
+
+                #cov_tmp = cov_tmp.reshape((nsurr_fields*nsurr_fields, self.nkbins[j], nsurr_fields*nsurr_fields, self.nkbins[i]))
+                cov_tmp = cov_tmp.reshape((nsurr_fields*nsurr_fields, self.nkbins[i], nsurr_fields*nsurr_fields, self.nkbins[j]))
+                cov_tmp = cov_tmp.transpose(0, 2, 1, 3)         # reorder axes to have cov matrix in the last two indices for each field.
+                cov[f'{i}-{j}'] = np.ascontiguousarray(cov_tmp)  # make contiguous
+        self.surr_cov = cov
 
     @functools.cached_property
     def cosmo(self):
@@ -570,7 +598,7 @@ class KszPipeOutdir:
         assert ell[1] in self.spin_gal
         idx1 = self.data_fields[f'gal-{ell[0]}']
         idx2 = self.data_fields[f'gal-{ell[1]}']
-        return self.pk_data[idx1, idx2, :]
+        return self.pk_data[self.binning['gg']][idx1, idx2, :]
         
     def pgv_data(self, freq=['90','150'], field=[1,0], ell=[0, 1]):
         r"""Returns shape ``(nkbins,)`` array containing $P_{gv}^{ell=1}^{data}(k)$.
@@ -590,7 +618,7 @@ class KszPipeOutdir:
         idx_gal = self.data_fields[f'gal-{ell[0]}']
         idx_vr_1, idx_vr_2 = self.data_fields[f'{freq[0]}-{ell[1]}'], self.data_fields[f'{freq[1]}-{ell[1]}']
 
-        return field[0]*self.pk_data[idx_gal, idx_vr_1] + field[1]*self.pk_data[idx_gal, idx_vr_2]
+        return field[0]*self.pk_data[self.binning['gv']][idx_gal, idx_vr_1] + field[1]*self.pk_data[self.binning['gv']][idx_gal, idx_vr_2]
 
     def pvv_data(self, freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]], ell=[1,1]):
         r"""Returns shape ``(nkbins,)`` array containing $P_{vv}^{data}(k)$.
@@ -609,7 +637,7 @@ class KszPipeOutdir:
         idx_vr_11, idx_vr_12 = self.data_fields[f'{freq[0][0]}-{ell[0]}'], self.data_fields[f'{freq[0][1]}-{ell[0]}']
         idx_vr_21, idx_vr_22 = self.data_fields[f'{freq[1][0]}-{ell[1]}'], self.data_fields[f'{freq[1][1]}-{ell[1]}']
 
-        t = field[0][0]*self.pk_data[idx_vr_11,:] + field[0][1]*self.pk_data[idx_vr_12,:]
+        t = field[0][0]*self.pk_data[self.binning['vv']][idx_vr_11,:] + field[0][1]*self.pk_data[self.binning['vv']][idx_vr_12,:]
         return field[1][0]*t[idx_vr_21] + field[1][1]*t[idx_vr_22]
 
     def pgg_mean(self, b1=1, fnl=0, sn=1, ell=[0,0]):
@@ -621,7 +649,7 @@ class KszPipeOutdir:
         idx_gal_1 = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in self.suff_gal_list]
         idx_gal_2 = [self.surr_fields[f'gal-{ell[1]}-{suff}'] for suff in self.suff_gal_list]
 
-        pgg = self.surr_mean[idx_gal_1, :, :]       # shape (2, #fields, nkbins)
+        pgg = self.surr_mean[self.binning['gg']][idx_gal_1, :, :]       # shape (2, #fields, nkbins)
         pgg = np.sum(params_gal[:, None, None] * pgg, axis=0)  # shape (nsurr,  #fields, nkbins)
         return np.sum(params_gal[:, None] * pgg[idx_gal_2, :], axis=0)       # shape (nsurr, nkbins)
 
@@ -647,7 +675,7 @@ class KszPipeOutdir:
         idx_vr_1 = [self.surr_fields[f'{freq[0]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_2 = [self.surr_fields[f'{freq[1]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
 
-        pgv = self.surr_mean[idx_gal,:,:] # shape (2, #fields, nkbins)
+        pgv = self.surr_mean[self.binning['gv']][idx_gal,:,:] # shape (2, #fields, nkbins)
         # this is the g term:
         pgv = np.sum(params_gal[:, None, None] * pgv, axis=0) # shape (#fields, nkbins)
         # combine or not the different frequency fields:
@@ -674,7 +702,7 @@ class KszPipeOutdir:
         idx_vr_21 = [self.surr_fields[f'{freq[1][0]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_22 = [self.surr_fields[f'{freq[1][1]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
 
-        pvv = field[0][0] * self.surr_mean[idx_vr_11,:,:] + field[0][1] * self.surr_mean[idx_vr_12,:,:] # shape (#params_vel, #fields, nkbins)
+        pvv = field[0][0] * self.surr_mean[self.binning['vv']][idx_vr_11,:,:] + field[0][1] * self.surr_mean[self.binning['vv']][idx_vr_12,:,:] # shape (#params_vel, #fields, nkbins)
         pvv = np.sum(params_vel[:, None, None] * pvv, axis=0) # shape (#fields, nkbins)
         pvv = field[1][0] * pvv[idx_vr_21,:] + field[1][1] * pvv[idx_vr_22,:]      # shape (#params_vel, nkbins)
         return np.sum(params_vel[:, None] * pvv, axis=0)   # shape (nkbins)
@@ -697,7 +725,8 @@ class KszPipeOutdir:
         idx1 = np.array([i*self.nsurr_fields + j for i in idx_gal_11 for j in idx_gal_12])  # shape (len(idx_gal_11)*len(idx_gal_12), )
         idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal_21 for jj in idx_gal_22]) 
 
-        cov = coeff_cov[:, None, None] * self.surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins, self.nkbins)  
+        surr_cov = self.surr_cov[f"{self.binning['gg']}-{self.binning['gg']}"] # select the covariance for the right binning
+        cov = coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gg']], self.nkbins[self.binning['gg']])  
 
         return np.sum(cov, axis=0)  # shape (nkbins, nkbins)
 
@@ -731,11 +760,12 @@ class KszPipeOutdir:
         for i, idx_vr1 in enumerate([idx_vr1_1, idx_vr1_2]):
             for j, idx_vr2 in enumerate([idx_vr2_1, idx_vr2_2]):
                 if field1[i] == 0 or field2[j] == 0:
-                    cov_tmp = np.zeros((self.nkbins, self.nkbins))  # shape (nkbins, nkbins)
+                    cov_tmp = np.zeros((self.nkbins[self.binning['gv']], self.nkbins[self.binning['gv']]))  # shape (nkbins, nkbins)
                 else:
                     idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal1 for jj in idx_vr1])  # shape (len(idx_gal_1)*len(idx_vr1), ) 
                     idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal2 for jj in idx_vr2])  # shape (len(idx_gal_2)*len(idx_vr2), )
-                    cov_tmp = np.sum(coeff_cov[:, None, None] * self.surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins, self.nkbins), axis=0)  # shape (nkbins, nkbins)
+                    surr_cov = self.surr_cov[f"{self.binning['gv']}-{self.binning['gv']}"] # select the covariance for the right binning
+                    cov_tmp = np.sum(coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gv']], self.nkbins[self.binning['gv']]), axis=0)  # shape (nkbins, nkbins)
                 cov += [cov_tmp]
 
         field = np.ravel(field1[:, None] * field2[None, :])
@@ -769,11 +799,12 @@ class KszPipeOutdir:
                 for k, idx_vr2_1 in enumerate([idx_vr2_1_1, idx_vr2_1_2]):
                     for l, idx_vr2_2 in enumerate([idx_vr2_2_1, idx_vr2_2_2]):
                         if field1[0][i] == 0 or field1[1][j] == 0 or field2[0][k] == 0 or field2[1][l] == 0:
-                            cov_tmp = np.zeros((self.nkbins, self.nkbins))  # shape (nkbins, nkbins)
+                            cov_tmp = np.zeros((self.nkbins[self.binning['vv']], self.nkbins[self.binning['vv']]))  # shape (nkbins, nkbins)
                         else:
                             idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr1_1 for jj in idx_vr2_1])  # shape (len(idx_gal_1)*len(idx_vr1), ) 
                             idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr1_2 for jj in idx_vr2_2])  # shape (len(idx_gal_2)*len(idx_vr2), )
-                            cov_tmp = np.sum(coeff_cov[:, None, None] * self.surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins, self.nkbins), axis=0)  # shape (nkbins, nkbins)
+                            surr_cov = self.surr_cov[f"{self.binning['vv']}-{self.binning['vv']}"] # select the covariance for the right binning
+                            cov_tmp = np.sum(coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['vv']], self.nkbins[self.binning['vv']]), axis=0)  # shape (nkbins, nkbins)
                         cov += [cov_tmp]
 
         field = np.ravel(np.ravel(np.array(field1[0])[:, None] * np.array(field1[1])[None, :])[:, None] * np.ravel(np.array(field2[0])[:, None] * np.array(field2[1])[None, :])[None, :])
@@ -802,21 +833,22 @@ class KszPipeOutdir:
         # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields=[1,0]) 
         for i, idx_vr in enumerate([idx_vr1_1, idx_vr1_2]):
             if field2[i] == 0:
-                cov_tmp = np.zeros((self.nkbins, self.nkbins))  # shape (nkbins, nkbins)
+                cov_tmp = np.zeros((self.nkbins[self.binning['gg']], self.nkbins[self.binning['gv']]))  # shape (nkbins, nkbins)
             else:
                 idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal1 for jj in idx_gal2]) 
                 idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal3 for jj in idx_vr]) 
-                cov_tmp = np.sum(coeff_cov[:, None, None] * self.surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins, self.nkbins), axis=0)  # shape (nkbins, nkbins)
+                surr_cov = self.surr_cov[f"{self.binning['gg']}-{self.binning['gv']}"] # select the covariance for the right binning
+                cov_tmp = np.sum(coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gg']], self.nkbins[self.binning['gv']]), axis=0)  # shape (nkbins, nkbins)
             cov += [cov_tmp]
 
         return np.sum(field2[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pgvxpgg_cov(self, fnl1=0, bv1=1, bfg1=0, b12=1, fnl2=0, sn2=1,
+    def pgvxpgg_cov(self, b11=1, fnl1=0, bv1=1, bfg1=0, b12=1, fnl2=0, sn2=1,
                     freq1=['90','150'], field1=[1,0], ell1=[0, 0], 
                     ell2=[0, 1]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gv}^{surr}(k) \times P_{gg}^{surr}(k)$."""
         
-        return self.pggxpgv_cov(b11=b12, fnl1=fnl2, sn1=sn2, fnl2=fnl1, bv2=bv1, bfg2=bfg1, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1)
+        return self.pggxpgv_cov(b11=b12, fnl1=fnl2, sn1=sn2, b12=b11, fnl2=fnl1, bv2=bv1, bfg2=bfg1, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1).T
 
     def pgvxpvv_cov(self, b11=1, fnl1=0, sn1=1, bv1=1, bfg1=0, bv2=1, bfg2=0,
                     freq1=['90','150'], field1=[1,0], ell1=[0,1], 
@@ -842,11 +874,12 @@ class KszPipeOutdir:
             for j, idx_vr2_1 in enumerate([idx_vr2_1_1, idx_vr2_1_2]):
                 for k, idx_vr2_2 in enumerate([idx_vr2_2_1, idx_vr2_2_2]):
                     if field1[i] == 0 or field2[0][j] == 0 or field2[1][k] == 0:
-                        cov_tmp = np.zeros((self.nkbins, self.nkbins))  # shape (nkbins, nkbins)
+                        cov_tmp = np.zeros((self.nkbins[self.binning['gv']], self.nkbins[self.binning['vv']]))  # shape (nkbins, nkbins)
                     else:
                         idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal1 for jj in idx_vr1]) 
                         idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr2_1 for jj in idx_vr2_2]) 
-                        cov_tmp = np.sum(coeff_cov[:, None, None] * self.surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins, self.nkbins), axis=0)  # shape (nkbins, nkbins)
+                        surr_cov = self.surr_cov[f"{self.binning['gv']}-{self.binning['vv']}"] # select the covariance for the right binning
+                        cov_tmp = np.sum(coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gv']], self.nkbins[self.binning['vv']]), axis=0)  # shape (nkbins, nkbins)
                     cov += [cov_tmp]
 
         field = np.ravel(np.array(field1)[:, None] * np.ravel(np.array(field2[0])[:, None] * np.array(field2[1])[None, :])[None, :])
@@ -857,7 +890,7 @@ class KszPipeOutdir:
                     freq2=['90','150'], field2=[1,0], ell2=[0,1]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{vv}^{surr}(k) \times P_{gv}^{surr}(k)$."""
 
-        return self.pgvxpvv_cov(b11=b12, fnl1=fnl2, sn1=sn2, bv1=bv2, bfg1=bfg2, bv2=bv1, bfg2=bfg1, freq1=freq2, field1=field2, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1)
+        return self.pgvxpvv_cov(b11=b12, fnl1=fnl2, sn1=sn2, bv1=bv2, bfg1=bfg2, bv2=bv1, bfg2=bfg1, freq1=freq2, field1=field2, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1).T
 
     def pggxpvv_cov(self, b11=1, fnl1=0, sn1=1, bv2=1, bfg2=0, 
                     ell1=[0,0], 
@@ -881,11 +914,12 @@ class KszPipeOutdir:
         for i, idx_vr1 in enumerate([idx_vr2_1_1, idx_vr2_1_2]):
             for j, idx_vr2 in enumerate([idx_vr2_2_1, idx_vr2_2_2]):
                 if field2[0][i] == 0 or field2[1][j] == 0:
-                    cov_tmp = np.zeros((self.nkbins, self.nkbins))  # shape (nkbins, nkbins)
+                    cov_tmp = np.zeros((self.nkbins[self.binning['gg']], self.nkbins[self.binning['vv']]))  # shape (nkbins, nkbins)
                 else:
                     idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal1 for jj in idx_gal2]) 
                     idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr1 for jj in idx_vr2]) 
-                    cov_tmp = np.sum(coeff_cov[:, None, None] * self.surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins, self.nkbins), axis=0)  # shape (nkbins, nkbins)
+                    surr_cov = self.surr_cov[f"{self.binning['gg']}-{self.binning['vv']}"] # select the covariance for the right binning
+                    cov_tmp = np.sum(coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gg']], self.nkbins[self.binning['vv']]), axis=0)  # shape (nkbins, nkbins)
                 cov += [cov_tmp]
 
         field = np.ravel(np.array(field2[0])[:, None] * np.array(field2[1])[None, :])
@@ -895,7 +929,7 @@ class KszPipeOutdir:
                     ell1=[1,1], freq1=[['90','150'], ['90','150']], field1=[[1,0], [1,0]],
                     ell2=[0,0]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{vv}^{surr}(k) \times P_{gg}^{surr}(k)$."""
-        return self.pggxpvv_cov(b11=b12, fnl1=fnl2, sn1=sn2, bv2=bv1, bfg2=bfg1, ell1=ell2, ell2=ell1, freq2=freq1, field2=field1)
+        return self.pggxpvv_cov(b11=b12, fnl1=fnl2, sn1=sn2, bv2=bv1, bfg2=bfg1, ell1=ell2, ell2=ell1, freq2=freq1, field2=field1).T
 
     def _pgg_rms(self, b1=1, fnl=0, sn=1, ell=[0, 0]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array, containing sqrt(Var($P_{gg}^{surr}(k)$))."""
@@ -918,7 +952,7 @@ class KszPipeOutdir:
         idx_gal_1 = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in self.suff_gal_list]
         idx_gal_2 = [self.surr_fields[f'gal-{ell[1]}-{suff}'] for suff in self.suff_gal_list]
 
-        pgg =  self.pk_surr[:, idx_gal_1, :, :]       # shape (nsurr, 2, #fields, nkbins)
+        pgg =  self.pk_surr[self.binning['gg']][:, idx_gal_1, :, :]       # shape (nsurr, 2, #fields, nkbins)
         pgg = np.sum(params_gal[None, :, None, None] * pgg, axis=1)  # shape (nsurr, #fields, nkbins)
         return np.sum(params_gal[None, :, None] * pgg[:, idx_gal_2, :], axis=1)       # shape (nsurr, nkbins)
 
@@ -935,7 +969,7 @@ class KszPipeOutdir:
         idx_vr_1 = [self.surr_fields[f'{freq[0]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_2 = [self.surr_fields[f'{freq[1]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
 
-        pgv = self.pk_surr[:, idx_gal,:,:] # shape (nsurr, 2, #fields, nkbins)
+        pgv = self.pk_surr[self.binning['gv']][:, idx_gal,:,:] # shape (nsurr, 2, #fields, nkbins)
         # this is the g term:
         pgv = np.sum(params_gal[None, :, None, None] * pgv, axis=1) # shape (nsurr, #fields, nkbins)
         # combine or not the different frequency fields:
@@ -953,7 +987,7 @@ class KszPipeOutdir:
         idx_vr_21 = [self.surr_fields[f'{freq[1][0]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_22 = [self.surr_fields[f'{freq[1][1]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
 
-        pvv = field[0][0] * self.pk_surr[:,idx_vr_11,:,:] + field[0][1] * self.pk_surr[:,idx_vr_12,:,:] # shape (nsurr, #params_vel, #fields, nkbins)
+        pvv = field[0][0] * self.pk_surr[self.binning['vv']][:,idx_vr_11,:,:] + field[0][1] * self.pk_surr[self.binning['vv']][:,idx_vr_12,:,:] # shape (nsurr, #params_vel, #fields, nkbins)
         pvv = np.sum(params_vel[None, :, None, None] * pvv, axis=1) # shape (nsurr, #fields, nkbins)
         pvv = field[1][0] * pvv[:, idx_vr_21,:] + field[1][1] * pvv[:, idx_vr_22,:]      # shape (nsurr, #params_vel, nkbins)
         return np.sum(params_vel[None, :, None] * pvv, axis=1)   # shape (nsurr, nkbins)

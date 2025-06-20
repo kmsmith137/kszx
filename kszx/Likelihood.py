@@ -13,7 +13,8 @@ class Likelihood:
     def __init__(self, pout, 
                  params={'fnl': {'ref': 0, 'prior': [-100, 100], 'latex': r'$f_{\rm NL}^{\rm loc}$'}},
                  fields={'gv': {'freq': ['90', '150'], 'field': [1, 0], 'ell': [0, 1], 'name_params': {'fnl':'fnl', 'bv':'bv', 'bfg':'bfg'}}}, 
-                 first_kbin={'gv': None}, last_kbin={'gv': None}, jeffreys_prior=False, cov_fix_params=False):
+                 first_kbin={'gv': None}, last_kbin={'gv': None}, jeffreys_prior=False,
+                 cov_fix_params=False, params_cov=None):
         r""" TODO. 
         
         name_params should be in params !
@@ -35,8 +36,8 @@ class Likelihood:
         self.pout = pout
         self.first_kbin = first_kbin
         self.last_kbin = last_kbin
-        self.k = np.concatenate([pout.k[first_kbin[name]:last_kbin[name]] for name in fields])
-        self.nk = [pout.k[first_kbin[name]:last_kbin[name]].size for name in fields]
+        self.k = np.concatenate([pout.k[name[:2]][first_kbin[name]:last_kbin[name]] for name in fields])
+        self.nk = [pout.k[name[:2]][first_kbin[name]:last_kbin[name]].size for name in fields]
         self.fields = fields
 
         self.params = params
@@ -52,14 +53,20 @@ class Likelihood:
 
         self.cov_fix_params = cov_fix_params  # Speed up the mcmc by using covariance at fiducial value of the parameters.
         if cov_fix_params:
-            params_fid = None
-            _, cov = self.mean_and_cov(params_fid)
+            self.params_cov = params_cov
+            _, cov = self.mean_and_cov(force_compute_cov=True, **params_cov)
+            self.cov = cov
+            self.cov_inv = np.linalg.inv(cov)
+            self.logdet_cov = np.linalg.slogdet(cov)[1]
+            # cholesky decomposition is faster (for large matrix) than linalg.inv !
+            self.cov_cholesky = np.linalg.cholesky(cov)
 
         data = []
         for field in self.fields: 
             field_split = field.split('_')
             ff = self.fields[field].copy()
             _ = ff.pop('name_params')
+            if 'fix_params' in ff: _ = ff.pop('fix_params')
             if field_split[0] == 'gg':
                 data += [self.pout.pgg_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
             elif field_split[0] == 'gv':
@@ -71,7 +78,7 @@ class Likelihood:
                 sys.exit(2)
         self.data = np.concatenate(data)
     
-    def mean_and_cov(self, grad=False, cov_fix_params=False, **params):
+    def mean_and_cov(self, force_compute_cov=False, grad=False, **params):
         r""" TODO. """
 
         mu = []
@@ -81,8 +88,11 @@ class Likelihood:
 
             # use the value of the params to evaluate the theory:
             name_params = ff.pop('name_params')
-            for nn in name_params:
-                ff.update({nn: params[name_params[nn]]})
+            ff.update({nn: params[name_params[nn]] for nn in name_params})
+            # add chosen default value for some parameters
+            if 'fix_params' in ff:
+                fix_params = ff.pop('fix_params')
+                ff.update(fix_params)
 
             if field_split[0] == 'gg':
                 mu += [self.pout.pgg_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
@@ -92,7 +102,7 @@ class Likelihood:
                 mu += [self.pout.pvv_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
         mu = np.concatenate(mu)
 
-        if cov_fix_params:
+        if self.cov_fix_params and not force_compute_cov:
             cov = self.cov
         else:
             cov = []
@@ -103,12 +113,19 @@ class Likelihood:
 
                     ff = {f"{key}1": value for key, value in self.fields[field1].items()}
                     ff.update({f"{key}2": value for key, value in self.fields[field2].items()})
-                    
+
                     # use the value of the params to evaluate the covariance:
                     name_params1 = ff.pop('name_params1')
+                    ff.update({nn+'1': params[name_params1[nn]] for nn in name_params1})
                     name_params2 = ff.pop('name_params2')
-                    for nn in name_params1: ff.update({nn+'1': params[name_params1[nn]]})
-                    for nn in name_params2: ff.update({nn+'2': params[name_params2[nn]]})
+                    ff.update({nn+'2': params[name_params2[nn]] for nn in name_params2})
+                    # add chosen default value for some parameters
+                    if 'fix_params1' in ff:
+                        fix_params = ff.pop('fix_params1')
+                        ff.update({nn+'1': fix_params[nn]for nn in fix_params})
+                    if 'fix_params2' in ff:
+                        fix_params = ff.pop('fix_params2')
+                        ff.update({nn+'2': fix_params[nn] for nn in fix_params})
 
                     # not super elegant... 
                     if field1_split[0] == 'gg':
@@ -144,6 +161,13 @@ class Likelihood:
             cov_grad = None
             return mu, cov, mu_grad, cov_grad
 
+    def uniform_log_prior(self, **params):
+        for key in self.params:
+            low, high = self.params[key]['prior']
+            if not (low < params[key] < high):
+                return -np.inf
+        return 0.0
+
     def log_likelihood(self, *params):
         r""" """
         params = {key: params[i] for i, key in enumerate(self.params)}
@@ -155,13 +179,22 @@ class Likelihood:
             # No gradients needed
             mean, cov = self.mean_and_cov(**params, grad=False)
         
+        # Cholesky decompotision:
         x = self.data - mean
-        l = np.linalg.cholesky(cov)
-        linv_x = scipy.linalg.solve_triangular(l, x, lower=True)
+        cov_cholesky = self.cov_cholesky if self.cov_fix_params else np.linalg.cholesky(cov)
+        logdet_cov = self.logdet_cov if self.cov_fix_params else np.linalg.slogdet(cov)[1]
+        linv_x = scipy.linalg.solve_triangular(cov_cholesky, x, lower=True)
+        logL = -(0.5 * np.dot(linv_x, linv_x) + logdet_cov)  # + x.size*np.log(2*np.pi))
 
-        # log L = -(1/2) log(det C) - (1/2) x^T C^{-1} x
-        logL = -0.5 * np.dot(linv_x, linv_x)
-        logL -= np.sum(np.log(l.diagonal()))
+        # Brute force:
+        # x = self.data - mean
+        # cov_inv = self.cov_inv if self.cov_fix_params else np.linalg.inv(cov)
+        # # slogdet can avoid some overflow in det. sign is always positive per construction of the covariance.
+        # logdet_cov = self.logdet_cov if self.cov_fix_params else np.linalg.slogdet(cov)[1]
+        # logL = -0.5 * (x.T.dot(cov_inv.dot(x)) + logdet_cov)  # + x.size*np.log(2*np.pi))
+
+        # Add uniform prior: 
+        logL += self.uniform_log_prior(**params)
 
         # if self.jeffreys_prior:
         #     B, D = (self.B, self.D)
@@ -242,6 +275,7 @@ class Likelihood:
 
         # Create getdist samples
         gdsamples = MCSamples(samples=self.samples, names=[name for name in self.params], labels=[self.params[name]['latex'] for name in self.params])
+        self.gdsamples = gdsamples  # save for later use
 
         # Triangle plot
         g = plots.get_subplot_plotter()
@@ -291,8 +325,6 @@ class Likelihood:
 
         print(tabulate(tab, headers="firstrow", tablefmt='rounded_outline'))
         if fn_tab is not None: np.savetxt(tab, fn_tab)
-
-        return tab
 
     def show_quantile(self):
         qlevels = [0.025, 0.16, 0.5, 0.84, 0.975]
@@ -345,3 +377,137 @@ class Likelihood:
         pte = scipy.stats.chi2.sf(chi2, ndof)
         
         return chi2, ndof, chi2 / ndof, pte
+
+    def plot_data(self, params=None, add_bestfit=True, fn_fig=None):
+        """ """
+        # Compute theory predicition:
+        bestfit = self.mean_and_cov(**self.bestfit)[0] if add_bestfit else None
+        theory = self.mean_and_cov(**params)[0] if params is not None else None
+
+        # Compute the errors:
+        try: 
+            cov = self.mean_and_cov(force_compute_cov=True, **self.bestfit)[1]
+            err = np.sqrt(np.diag(cov))
+        except:
+            if params is not None: 
+                print(f'Use {params=}')
+                cov = self.mean_and_cov(force_compute_cov=True, **params)[1]
+                err = np.sqrt(np.diag(cov))
+            else: 
+                print('no error display')
+                err = np.zeros(self.data)
+        
+        plt.figure(figsize=(3.5*len(self.fields) + 1, 3))
+        for i, key in enumerate(self.fields):
+            plt.subplot(1, len(self.fields), 1+i)
+
+            start, end = np.sum(self.nk[:i], dtype='int'), np.sum(self.nk[:i+1], dtype='int')
+            if 'gg' in key:
+                k_power = 0
+            elif 'gv' in key:
+                k_power = 0 if self.fields[key]['ell'][1] == 0 else 1
+            else:
+                k_power = 2
+
+            plt.errorbar(self.k[start:end], self.k[start:end]**k_power*self.data[start:end], self.k[start:end]**k_power*err[start:end], ls='', marker='.', label='data', zorder=10)
+            if add_bestfit: plt.plot(self.k[start:end], self.k[start:end]**k_power*bestfit[start:end], label='bestfit', ls='--', c='r', zorder=0)
+            if params is not None: plt.plot(self.k[start:end], self.k[start:end]**k_power*theory[start:end], ls=':', c='orange', zorder=1)
+
+            if 'gg' in key:
+                plt.ylabel('$P^{gg}_{\ell=0}$ [Mpc$^3$]')
+                plt.xscale('log')
+                plt.yscale('log')
+            elif 'gv' in key:
+                if self.fields[key]['ell'][1] == 0:
+                    plt.ylabel('$P^{gv}_{\ell=0}$ [Mpc$^3$x]')
+                    plt.xscale('log')
+                    plt.yscale('log')
+                else:
+                    plt.ylabel('$k P^{gv}_{\ell=1}$ [Mpc$^2$x]')
+            else:
+                plt.ylabel('$k^2P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +',\ell=' + str(self.fields[key]['ell'][1]) + '}$ $[Mpc^3]$')
+                plt.xscale('log')
+                plt.yscale('log')
+            plt.xlabel('$k$ [Mpc$^{-1}$]')
+            plt.legend()
+        plt.tight_layout()
+        if fn_fig is not None: plt.savefig(fn_fig)
+        plt.show()
+
+    def plot_cov(self, params=None, nticks=5, fn_fig=None):
+        """ """
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+        if params is not None: 
+            cov = self.mean_and_cov(force_compute_cov=True, **params)[1]
+        else: 
+            cov = self.mean_and_cov(force_compute_cov=True, **self.bestfit)[1]
+
+        plt.figure(figsize=(2.5*len(self.fields) + 1, 2.5*len(self.fields) + 1))
+        ax = plt.gca()
+        im = ax.imshow(np.log10(np.abs(cov)))
+
+        idx = np.arange(0, len(self.k), len(self.k) // (nticks*len(self.fields)))
+        ax.set_xticks(idx, [f'{self.k[i]:2.2f}' for i in idx])
+        ax.set_yticks(idx, [f'{self.k[i]:2.2f}' for i in idx])
+
+        ax.set_xlabel('$k$ [Mpc$^{-1}$]')
+        ax.set_ylabel('$k$ [Mpc$^{-1}$]')
+
+        # create an axes on the right side of ax. The width of cax will be 5%
+        # of ax and the padding between cax and ax will be fixed at 0.1 inch.
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.1)
+
+        plt.colorbar(im, cax=cax, label=r'$\log(\vert cov \vert)$')
+        plt.tight_layout()
+        if fn_fig is not None: plt.savefig(fn_fig)
+        plt.show()
+
+    def plot_corr(self, params=None, nticks=5, fn_fig=None):
+        """ """
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+        if params is not None: 
+            cov = self.mean_and_cov(force_compute_cov=True, **params)[1]
+        else: 
+            cov = self.mean_and_cov(force_compute_cov=True, **self.bestfit)[1]
+
+        corr = cov / np.sqrt(np.outer(np.diag(cov), np.diag(cov)))
+
+        plt.figure(figsize=(2.5*len(self.fields) + 1, 2.5*len(self.fields) + 1))
+        ax = plt.gca()
+
+        # Generate a custom diverging colormap: difficult to be nice :(
+        import seaborn as sns
+        cmap = sns.diverging_palette(220, 25, as_cmap=True)
+
+        im = ax.imshow(corr, vmin=-1, vmax=1, cmap=cmap)
+
+        idx = np.arange(0, len(self.k), len(self.k) // (nticks*len(self.fields)))
+        ax.set_xticks(idx, [f'{self.k[i]:2.2f}' for i in idx])
+        ax.set_yticks(idx, [f'{self.k[i]:2.2f}' for i in idx])
+
+        ax.set_xlabel('$k$ [Mpc$^{-1}$]')
+        ax.set_ylabel('$k$ [Mpc$^{-1}$]')
+
+        # create an axes on the right side of ax. The width of cax will be 5%
+        # of ax and the padding between cax and ax will be fixed at 0.1 inch.
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.1)
+
+        plt.colorbar(im, cax=cax, label=r'R')
+        plt.tight_layout()
+        if fn_fig is not None: plt.savefig(fn_fig)
+        plt.show()
+
+
+
+# class SumLikelihood(Likelihood):
+#     def __init__(self, lik1, lik2):
+
+#         self.hihi
+
+        # if fix_cov: self.cov ... (pour le loglikelihood? non le reecrire ca sera plus facile ?!)
+
+#     def mean_and_cov(self, force_compute_cov=False, grad=False, **params): 

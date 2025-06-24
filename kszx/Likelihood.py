@@ -14,7 +14,7 @@ class Likelihood:
                  params={'fnl': {'ref': 0, 'prior': [-100, 100], 'latex': r'$f_{\rm NL}^{\rm loc}$'}},
                  fields={'gv': {'freq': ['90', '150'], 'field': [1, 0], 'ell': [0, 1], 'name_params': {'fnl':'fnl', 'bv':'bv', 'bfg':'bfg'}}}, 
                  first_kbin={'gv': None}, last_kbin={'gv': None}, jeffreys_prior=False,
-                 cov_fix_params=False, params_cov=None):
+                 cov_fix_params=False, params_cov=None, cov_correction='hartlap-percival'):
         r""" TODO. 
         
         name_params should be in params !
@@ -42,7 +42,7 @@ class Likelihood:
 
         self.params = params
         for field in fields:
-            for name in fields[field]['name_params']: 
+            for name in fields[field]['name_params'].values(): 
                 assert name in params
 
         self.jeffreys_prior = jeffreys_prior
@@ -50,16 +50,6 @@ class Likelihood:
             import sys
             print('ERROR: jeffreys_prior is not ready yet')
             sys.exit(8)
-
-        self.cov_fix_params = cov_fix_params  # Speed up the mcmc by using covariance at fiducial value of the parameters.
-        if cov_fix_params:
-            self.params_cov = params_cov
-            _, cov = self.mean_and_cov(force_compute_cov=True, **params_cov)
-            self.cov = cov
-            self.cov_inv = np.linalg.inv(cov)
-            self.logdet_cov = np.linalg.slogdet(cov)[1]
-            # cholesky decomposition is faster (for large matrix) than linalg.inv !
-            self.cov_cholesky = np.linalg.cholesky(cov)
 
         data = []
         for field in self.fields: 
@@ -77,6 +67,32 @@ class Likelihood:
                 print(f"{field_split} in not in gg, gv, vv")
                 sys.exit(2)
         self.data = np.concatenate(data)
+
+        self.factor_cov_correction = 1.0
+        if 'hartlap' in cov_correction:
+            # See: https://arxiv.org/abs/astro-ph/0608064
+            hartlap_factor = ((self.pout.nsurr - self.data.size - 2) / (self.pout.nsurr - 1))**(-1)
+            print(f'Using Hartlap correction for covariance: {hartlap_factor=}')
+            self.factor_cov_correction *= hartlap_factor
+        if 'percival' in cov_correction:
+            # See: https://arxiv.org/pdf/1312.4841
+            A = 2 / ((self.pout.nsurr - self.data.size - 1)*(self.pout.nsurr - self.data.size - 4))
+            B = (self.pout.nsurr - self.data.size - 2) / ((self.pout.nsurr - self.data.size - 1)*(self.pout.nsurr - self.data.size - 4))  
+            percival_factor = (1 + B*(self.data.size - len(self.params))) / (1 + A + B*(len(self.params) - 1))
+            print(f'Using Percival correction for covariance: {percival_factor=}')
+            self.factor_cov_correction *= percival_factor
+
+        self.cov_fix_params = cov_fix_params  # Speed up the mcmc by using covariance at fiducial value of the parameters.
+        if cov_fix_params:
+            print(f'Precompute the covariance matrix with {params_cov=}')
+            self.params_cov = params_cov
+            _, cov = self.mean_and_cov(force_compute_cov=True, **params_cov)
+            self.cov = cov
+            self.cov_inv = np.linalg.inv(cov)
+            self.logdet_cov = np.linalg.slogdet(cov)[1]
+            # cholesky decomposition is faster (for large matrix) than linalg.inv !
+            self.cov_cholesky = np.linalg.cholesky(cov)
+
     
     def mean_and_cov(self, force_compute_cov=False, grad=False, **params):
         r""" TODO. """
@@ -151,6 +167,8 @@ class Likelihood:
                             cov += [self.pout.pvvxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
             cov = np.block([[cov[i*len(self.fields) + j] for j in range(len(self.fields))] for i in range(len(self.fields))])
         
+        cov = self.factor_cov_correction * cov  # apply the correction factor to the covariance matrix
+
         if not grad:
             return mu, cov
         else:
@@ -257,6 +275,10 @@ class Likelihood:
         self.samples = sampler.get_chain(discard=discard, thin=thin, flat=True)
         print('MCMC done. To see the results, call the show_mcmc() method.')
 
+        # Create getdist samples --> save for later use
+        from getdist import MCSamples
+        self.gdsamples = MCSamples(samples=self.samples, names=[name for name in self.params], labels=[self.params[name]['latex'] for name in self.params]) 
+
         if fn_chain is not None: 
             print(f'Chain is saved in {fn_chain}')
             np.save(self.samples, fn_chain)
@@ -268,14 +290,10 @@ class Likelihood:
     def show_mcmc(self, add_expected_value=True, legend_label=None, fn_fig=None):
         r"""Makes a corner plot from MCMC results. Intended to be called from jupyter."""
 
-        if not hasattr(self, 'samples'):
+        if not hasattr(self, 'gdsamples'):
             raise RuntimeError('Must call Likelihood.run_mcmc() before Likelihood.show_mcmc().')
         
-        from getdist import MCSamples, plots
-
-        # Create getdist samples
-        gdsamples = MCSamples(samples=self.samples, names=[name for name in self.params], labels=[self.params[name]['latex'] for name in self.params])
-        self.gdsamples = gdsamples  # save for later use
+        from getdist import plots
 
         # Triangle plot
         g = plots.get_subplot_plotter()
@@ -291,7 +309,7 @@ class Likelihood:
         g.settings.figure_legend_ncol = 1
         g.settings.legend_colored_text = True
 
-        g.triangle_plot(gdsamples, filled=True, legend_labels=legend_label, show=False)
+        g.triangle_plot(self.gdsamples, filled=True, legend_labels=legend_label, show=False)
 
         if add_expected_value:
             # add expected value:
@@ -335,22 +353,17 @@ class Likelihood:
                 s = f'  ({(val-quantiles[2]):+.03f})' if (q != 0.5) else ''
                 print(f'{(100*q):.03f}% quantile: {val=:.03f}{s}')
 
-    #     print(f'\nSNR: {self.compute_snr():.03f}')
+            print(f'\nSNR: {self.compute_snr():.03f}')
 
-    # def compute_snr(self):
-    #     r"""Returns total SNR. Does not assume a model for $P_{gv}(k)$."""
+    def compute_snr(self, params=None):
+        r"""Returns total SNR at the bestfit parameters. 
+            # This is not the definition used previoulsy, do we want to change ? """
         
-    #     _, cov = self.slow_mean_and_cov(0, np.zeros(self.B))                # discard mean
-    #     grad_mu, _ = self.slow_mean_and_cov_gradients(0, np.zeros(self.B))  # discard grad_cov
-    #     m = grad_mu[1:,:]           # shape (B,D)       
-    #     d = self.data_vector        # shape (D,)
+        if params is None: params = self.bestfit
+        if isinstance(params, list): params = {key: params[i] for i, key in enumerate(self.params)}
+        mean, cov = self.mean_and_cov(**params)
 
-    #     cinv_m = np.linalg.solve(cov, m.T)  # shape (D,B)
-    #     h = np.dot(m, cinv_m)               # shape (B,B)
-    #     g = np.dot(d, cinv_m)
-
-    #     dchisq = np.dot(g, np.linalg.solve(h, g))
-    #     return np.sqrt(dchisq)
+        return np.sqrt(np.dot(mean, np.linalg.solve(cov, mean)))
 
     def analyze_chi2(self, params=None, ddof=None):
         r"""Computes a $\chi^2$ statistic, which compares data to model with given set of parameters.
@@ -368,15 +381,15 @@ class Likelihood:
         if isinstance(params, list): params = {key: params[i] for i, key in enumerate(self.params)}
         
         mean, cov = self.mean_and_cov(**params)
-
         if ddof is None: ddof = len(params)
         
         x = self.data - mean
         chi2 = np.dot(x, np.linalg.solve(cov,x))
         ndof = self.data.size - ddof
         pte = scipy.stats.chi2.sf(chi2, ndof)
+        snr = self.compute_snr(params)
         
-        return chi2, ndof, chi2 / ndof, pte
+        return chi2, ndof, chi2 / ndof, snr, pte
 
     def plot_data(self, params=None, add_bestfit=True, fn_fig=None):
         """ """
@@ -419,11 +432,11 @@ class Likelihood:
                 plt.yscale('log')
             elif 'gv' in key:
                 if self.fields[key]['ell'][1] == 0:
-                    plt.ylabel('$P^{gv}_{\ell=0}$ [Mpc$^3$x]')
+                    plt.ylabel('$P^{gv}_{\ell=0}$ [Mpc$^3$]')
                     plt.xscale('log')
                     plt.yscale('log')
                 else:
-                    plt.ylabel('$k P^{gv}_{\ell=1}$ [Mpc$^2$x]')
+                    plt.ylabel('$k P^{gv}_{\ell=1}$ [Mpc$^2$]')
             else:
                 plt.ylabel('$k^2P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +',\ell=' + str(self.fields[key]['ell'][1]) + '}$ $[Mpc^3]$')
                 plt.xscale('log')
@@ -502,6 +515,59 @@ class Likelihood:
         plt.show()
 
 
+class CombineRegionLikelihood(Likelihood):
+    def __init__(self, lik1, lik2, f1=None, f2=None, params_for_f=None):
+
+        assert np.all(lik1.k == lik2.k), "k bins must be the same for both likelihoods"
+        self.k = lik1.k
+        self.nk = lik1.nk
+        assert lik1.fields == lik2.fields, "Fields must be the same for both likelihoods"
+        self.fields = lik1.fields
+        assert lik1.params == lik2.params, "Parameters must be the same for both likelihoods"
+        self.params = lik1.params
+        assert lik1.jeffreys_prior == lik2.jeffreys_prior, "Jeffreys priors must be the same for both likelihoods"
+        self.jeffreys_prior = lik1.jeffreys_prior
+
+        self.lik1 = lik1
+        self.lik2 = lik2
+
+        if f1 is None:
+            if params_for_f is None:
+                print('Warning: f1, f2 and params_for_f are not provided, using default values of 0.5 for both likelihoods. Provide params_for_f to compute f1 as the ratio of the error.')
+                f1, f2 = 0.5, 0.5
+            else:
+                print('Compute f1 as 1 / (1 + np.mean(np.diag(cov1) / np.diag(cov2))) -> works for Pgg or Pgv but is it still the case for Pgg + Pgv if the two have different ratio ?')
+                _, cov1 = lik1.mean_and_cov(**params_for_f)
+                _, cov2 = lik2.mean_and_cov(**params_for_f)
+                f1 = 1 / (1 + np.mean(np.diag(cov1) / np.diag(cov2)))
+                f2 = 1 - f1
+        print(f"{f1=}, {f2=}")
+        self.f1, self.f2 = f1, f2
+
+        assert lik1.cov_fix_params == lik2.cov_fix_params, "cov_fix_params must be the same for both likelihoods"
+        self.cov_fix_params = lik1.cov_fix_params 
+        if self.cov_fix_params: 
+            assert np.all(lik1.params_cov == lik2.params_cov), "params_cov must be the same for both likelihoods"
+            self.cov = self.f1**2*lik1.cov + self.f2**2*lik2.cov
+            self.cov_inv = np.linalg.inv(self.cov)
+            self.logdet_cov = np.linalg.slogdet(self.cov)[1]
+            # cholesky decomposition is faster (for large matrix) than linalg.inv !
+            self.cov_cholesky = np.linalg.cholesky(self.cov)
+
+        assert lik1.factor_cov_correction == lik2.factor_cov_correction, "factor_cov_correction must be the same for both likelihoods (hints: use same number of surrogates for both likelihoods)"
+        #In this case, factor_cov_correction is the same for the combine likelihoods than for the two likelihoods, so we can just leave as it is.
+        #self.factor_cov_correction = lik1.factor_cov_correction
+
+        self.data = f1*lik1.data + f2*lik2.data
+
+    def mean_and_cov(self, force_compute_cov=False, grad=False, **params): 
+        mean1, cov1 = self.lik1.mean_and_cov(force_compute_cov=force_compute_cov, grad=grad, **params)
+        mean2, cov2 = self.lik2.mean_and_cov(force_compute_cov=force_compute_cov, grad=grad, **params)
+
+        mean = self.f1*mean1 + self.f2*mean2
+        cov = self.f1**2*cov1 + self.f2**2*cov2
+
+        return mean, cov
 
 # class SumLikelihood(Likelihood):
 #     def __init__(self, lik1, lik2):

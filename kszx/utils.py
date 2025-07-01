@@ -645,3 +645,13 @@ def std_notation(value, sigfigs, positive_sign=False):
     if is_neg and all(d == '0' for d in sig_digits): is_neg = False
 
     return ('-' if is_neg else '+' if positive_sign else '') + _place_dot(sig_digits, power)
+
+
+def flatten_cholesky(L):
+    return L[np.tril_indices_from(L)]
+
+def unflatten_cholesky(vec, dim):
+    L = np.zeros((dim, dim))
+    tril_indices = np.tril_indices(dim)
+    L[tril_indices] = vec
+    return L

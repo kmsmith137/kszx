@@ -84,6 +84,7 @@ class Likelihood:
 
         self.cov_fix_params = cov_fix_params  # Speed up the mcmc by using covariance at fiducial value of the parameters.
         self.cov_interp = cov_interp
+        self.interp_method = interp_method
 
         if cov_fix_params:
             print(f'Precompute the covariance matrix with {params_cov=}')
@@ -665,7 +666,7 @@ class CombineRegionLikelihood(Likelihood):
             sys.exit(31)
 
         to_unpack1 = self.lik1.mean_and_cov(force_compute_cov=force_compute_cov, return_cov=return_cov, return_grad=return_grad, **params)
-        to_unpack1 = self.lik2.mean_and_cov(force_compute_cov=force_compute_cov, return_cov=return_cov, return_grad=return_grad, **params)
+        to_unpack2 = self.lik2.mean_and_cov(force_compute_cov=force_compute_cov, return_cov=return_cov, return_grad=return_grad, **params)
 
         if return_cov:
             mean1, cov1 = to_unpack1

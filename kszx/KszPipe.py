@@ -225,6 +225,8 @@ class KszPipe:
         w = np.array(w)
         wf = self.window_function[idx,:][:,idx] * w[:, None] * w[None, :]
 
+        print('AJOUTER ICI AUSSI DANS SURROGATE LE TERM EN 2l+1 pour p_GV !!!!! (ca ne change rien car tout est compaitble entre data / sirrpgate !!)')
+
         pks = []
         for i, kbin_edges in enumerate(self.kbin_edges):
             # Estimate power spectra. and normalize by dividing by window function.

@@ -1,5 +1,6 @@
 from .. import core
 from .. import cpp_kernels
+from .. import Box
 from . import helpers
 
 import numpy as np
@@ -93,7 +94,7 @@ def test_multiply_xli_real_space():
         cpp_kernels.multiply_xli_real_space(dst2, src, l, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize)
 
         eps = np.max(np.abs(dst1-dst2))
-        print(f'{eps=} {l=} {i=} {box.npix=}')
+        # print(f'{eps=} {l=} {i=} {box.npix=}')
         assert float(eps) < 1.0e-13
         
     print('test_multiply_xli_real_space(): pass')
@@ -114,9 +115,9 @@ def test_multiply_xli_fourier_space():
         dst1 = xli_fs_box(l,i,box) * src
         dst2 = np.zeros(fs, dtype=complex)
         cpp_kernels.multiply_xli_fourier_space(dst2, src, l, i, box.npix[2])
-
+                    
         eps = np.max(np.abs(dst1-dst2))
-        print(f'{eps=} {l=} {i=} {box.npix=}')
+        # print(f'{eps=} {l=} {i=} {box.npix=}')
         assert float(eps) < 1.0e-13
         
     print('test_multiply_xli_fourier_space(): pass')

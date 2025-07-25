@@ -16,7 +16,8 @@ struct xlm_helper
     bool reim;
 
     double C = 0.0;
-    double eps[Lmax+1];
+    double eps_rec[Lmax+1];   // (1 / eps_l)
+    double eps_rat[Lmax+1];   // (eps_{l-1} / eps_l)
 
     xlm_helper(int l_, int i_)
     {
@@ -39,15 +40,20 @@ struct xlm_helper
 	    C *= (1.0 + 1.0/(2*j));
 
 	C = sqrt(C);
-	C = (m & 2) ? C : (-C);
+	C = (m & 1) ? (-C) : C;
 	   
 	for (int l = 0; l <= m; l++)
-	    eps[l] = 0.0;
+	    eps_rec[l] = eps_rat[l] = 0.0;
 
+	double eps_prev = 0.0;
 	for (int l = m+1; l <= Lmax; l++) {
 	    double num = l*l - m*m;
 	    double den = 4*l*l - 1;
-	    eps[l] = sqrt(num/den);
+	    double eps = sqrt(num/den);
+	    
+	    eps_rec[l] = 1.0 / eps;
+	    eps_rat[l] = eps_prev / eps;
+	    eps_prev = eps;
 	}
     }
 
@@ -77,7 +83,8 @@ struct xlm_helper
 	// FIXME renormalization
 	
 	for (int ll = m; ll < l; ll++) {
-	    double xli_next = (z * xli) - (eps[ll] * xli_prev);
+	    // ll -> (ll+1)
+	    double xli_next = (eps_rec[ll+1] * z * xli) - (eps_rat[ll+1] * xli_prev);
 	    xli_prev = xli;
 	    xli = xli_next;
 	}
@@ -136,7 +143,6 @@ void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double
 #pragma omp parallel for
     for (long i0 = 0; i0 < dst.n0; i0++) {
 	double x = lpos0 + (i0 * pixsize);
-
 	for (long i1 = 0; i1 < dst.n1; i1++) {
 	    double y = lpos1 + (i1 * pixsize);
 	    double *dp = dst.data + (i0 * dst.s0) + (i1 * dst.s1);
@@ -164,17 +170,21 @@ void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<
     if (dst.n2 != (nz/2)+1)
 	throw std::runtime_error("dst/src map shape is inconsistent with 'nz' argument");
     
+    double rec_nz = 1.0 / nz;
+    
 #pragma omp parallel for
     for (long i0 = 0; i0 < dst.n0; i0++) {
 	double x = (2*i0 > dst.n0) ? (i0 - dst.n0) : (i0);
+	x /= dst.n0;
 
 	for (long i1 = 0; i1 < dst.n1; i1++) {
-	    double y = (2*i1 > dst.n1) ? (i1 - dst.n1) : (i1);	    
 	    complex<double> *dp = dst.data + (i0 * dst.s0) + (i1 * dst.s1);
 	    const complex<double> *sp = src.data + (i0 * src.s0) + (i1 * src.s1);
+	    double y = (2*i1 > dst.n1) ? (i1 - dst.n1) : (i1);
+	    y /= dst.n1;
 	    
 	    for (long i2 = 0; i2 < dst.n2; i2++) {
-		double z = i2;
+		double z = rec_nz * i2;
 		bool dc = (i0+i1+i2) == 0;
 		bool nyq = (2*i0 == dst.n0) || (2*i1 == dst.n1) || (2*i2 == nz);
 		

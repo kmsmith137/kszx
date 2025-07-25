@@ -1,7 +1,6 @@
 from .. import Box
 from .. import core
 from .. import cpp_kernels
-from . import helpers
 
 import time
 import numpy as np

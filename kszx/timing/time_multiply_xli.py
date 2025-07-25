@@ -1,8 +1,10 @@
+from .. import Box
+from .. import core
+from .. import cpp_kernels
+from . import helpers
+
 import time
 import numpy as np
-
-from .. import cpp_kernels
-from ..Box import Box
 
 
 def time_multiply_xli_real_space(box_nside=1024, niter=10, l=5, i=1):

@@ -1,4 +1,5 @@
 from . import test_box
+from . import test_fft
 from . import test_lss
 from . import test_utils
 
@@ -7,6 +8,10 @@ def run_all_tests():
     test_box.test_k_component()
     test_box.test_r_component()
     test_box.test_smallest_r()
+
+    test_fft.test_xli()
+    test_fft.test_multiply_xli_real_space()
+    test_fft.test_multiply_xli_fourier_space()
     
     test_lss.test_fft_inverses()
     test_lss.test_fft_transposes()

@@ -17,5 +17,5 @@ def time_multiply_xli(box_nside=1024, niter=10, l=5, i=1):
         cpp_kernels.multiply_xli_real_space(dst, src, l, i, 1.0, 1.0, 1.0, 1.0)
         
     dt = time.time() - t0
-    nbytes = 16 * niter * npix**3
+    nbytes = 16 * niter * box_nside**3
     print(f'time_multiply_xli({box_nside=}, {niter=}, {l=}, {i=}): {dt} seconds, {1.0e-9 * (nbytes/dt)} GB/sec')

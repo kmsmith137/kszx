@@ -42,14 +42,14 @@ struct xlm_helper
 	for (int l = 0; l <= m; l++)
 	    eps[l] = 0.0;
 
-	for (int l = m+1; l <= lmax; l++) {
+	for (int l = m+1; l <= Lmax; l++) {
 	    double num = l*l - m*m;
 	    double den = 4*l*l - 1;
 	    eps[l] = sqrt(num/den);
 	}
     }
 
-    inline void get(double x, double y, double z);
+    inline double get(double x, double y, double z)
     {
 	// FIXME does this compile to a fast x86 rsqrt instruction?
 	double t = 1.0 / sqrt(x*x + y*y + z*z);
@@ -61,12 +61,12 @@ struct xlm_helper
 	
 	double ere = 1.0;
 	double eim = 0.0;
-	
-	while (m > 0) {
+
+	for (int mm = 0; mm < m; mm++) {
 	    double new_ere = ere*x - eim*y;
 	    double new_eim = ere*y + eim*x;
 	    ere = new_ere;
-	    eim = new_eim;
+	    eim = new_eim;	    
 	}
 
 	double xli = C * (reim ? eim : ere);
@@ -120,14 +120,14 @@ struct rs_helper
 };
 
 
-void multiply_xli_real_space(py::array_t<double> &dst_, const py::array_t<const double> &src_, int l, int i, double lpos0, double lpos1, double lpos2, double pixsize)
+void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double> &src_, int l, int i, double lpos0, double lpos1, double lpos2, double pixsize)
 {
-    rs_helper dst(dst_);
-    rs_helper src(src_);
+    rs_helper<double> dst(dst_);
+    rs_helper<const double> src(src_);
     xlm_helper h(l,i);
 
     if ((dst.n0 != src.n0) || (dst.n1 != src.n1) || (dst.n2 != src.n2))
-	throw std::runtime_error("expected dst/src maps to have the same shapes);
+	throw std::runtime_error("expected dst/src maps to have the same shapes");
     if (pixsize <= 0)
 	throw std::runtime_error("expected pixsize > 0");    
 

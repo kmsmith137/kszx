@@ -4,6 +4,7 @@ from pybind11.setup_helpers import Pybind11Extension, build_ext
 from setuptools import setup
 
 cpp_source_files = [
+    "cpp/multiply_xli.cpp",
     "cpp/cpp_kernels.cpp",
     "cpp/cic.cpp",
     "cpp/cubic.cpp",

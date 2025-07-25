@@ -58,7 +58,7 @@ if __name__ == '__main__':
         from . import cpp_kernels
         print(f'{cpp_kernels.omp_get_max_threads() = }')
         timing.time_interpolation()
-        timimg.time_multiply_xli()
+        timing.time_multiply_xli()
     elif args.command == 'kszpipe_run':
         from .KszPipe import KszPipe
         kszpipe = KszPipe(args.input_dirname, args.output_dirname)

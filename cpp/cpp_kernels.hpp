@@ -41,6 +41,10 @@ extern py::tuple kbin_average(py::array_t<const double> &fk, py::array_t<const d
 			      py::array_t<const long> &npix, py::array_t<const double> &kf);
 
 
+extern void multiply_xli_real_space(py::array_t<double> &dst_, const py::array_t<const double> &src_,
+				    int l, int i, double lpos0, double lpos1, double lpos2, double pixsize);
+
+
 // -------------------------------------------------------------------------------------------------
 //
 // These inline functions are used internally.

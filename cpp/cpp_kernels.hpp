@@ -2,6 +2,7 @@
 #define _KSZX_CPP_KERNELS_HPP
 
 #include <climits>
+#include <complex>
 #include <stdexcept>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
@@ -43,6 +44,10 @@ extern py::tuple kbin_average(py::array_t<const double> &fk, py::array_t<const d
 
 extern void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double> &src_, int l, int i,
 				    double lpos0, double lpos1, double lpos2, double pixsize);
+
+extern void multiply_xli_fourier_space(py::array_t<std::complex<double>> &dst_,
+				       py::array_t<const std::complex<double>> &src_,
+				       int l, int i, long nz);
 
 
 // -------------------------------------------------------------------------------------------------

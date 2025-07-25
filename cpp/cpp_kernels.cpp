@@ -41,4 +41,7 @@ PYBIND11_MODULE(cpp_kernels, m)
     m.def("multiply_xli_real_space", multiply_xli_real_space,
 	  py::arg("dst"), py::arg("src"), py::arg("l"), py::arg("i"),
 	  py::arg("lpos0"), py::arg("lpos1"), py::arg("lpos2"), py::arg("pixsize"));
+
+    m.def("multiply_xli_fourier_space", multiply_xli_fourier_space,
+	  py::arg("dst"), py::arg("src"), py::arg("l"), py::arg("i"), py::arg("nz"));
 }

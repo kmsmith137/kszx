@@ -2,6 +2,8 @@
 #include <cmath>
 #include "cpp_kernels.hpp"
 
+using namespace std;
+
 
 static constexpr int Lmax = 8;
 
@@ -88,15 +90,15 @@ struct xlm_helper
 // -------------------------------------------------------------------------------------------------
 
 
-// Use either T=double or T=(const double).
+// Can be used either for real-space maps (T=double) or Fourier-space (T=complex<double>).
 template<typename T>
-struct rs_helper
+struct grid_helper
 {
-    T *data;            // grid data
+    T *data;          // grid data
     long n0, n1, n2;  // grid shape
     long s0, s1, s2;  // grid strides
 
-    rs_helper(py::array_t<T> &grid)
+    grid_helper(py::array_t<T> &grid)
     {
 	if (grid.ndim() != 3)
 	    throw std::runtime_error("expected 'grid' to be a 3-d array");
@@ -122,8 +124,8 @@ struct rs_helper
 
 void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double> &src_, int l, int i, double lpos0, double lpos1, double lpos2, double pixsize)
 {
-    rs_helper<double> dst(dst_);
-    rs_helper<const double> src(src_);
+    grid_helper<double> dst(dst_);
+    grid_helper<const double> src(src_);
     xlm_helper h(l,i);
 
     if ((dst.n0 != src.n0) || (dst.n1 != src.n1) || (dst.n2 != src.n2))
@@ -144,6 +146,39 @@ void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double
 		double z = lpos2 + (i2 * pixsize);
 		double xli = h.get(x, y, z);
 		
+		dp[i2 * dst.s2] = xli * sp[i2 * src.s2];
+	    }
+	}
+    }
+}
+
+
+void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<const complex<double>> &src_, int l, int i, long nz)
+{
+    grid_helper<complex<double>> dst(dst_);
+    grid_helper<const complex<double>> src(src_);
+    xlm_helper h(l,i);
+
+    if ((dst.n0 != src.n0) || (dst.n1 != src.n1) || (dst.n2 != src.n2))
+	throw std::runtime_error("expected dst/src maps to have the same shapes");
+    if (dst.n2 != (nz/2)+1)
+	throw std::runtime_error("dst/src map shape is inconsistent with 'nz' argument");
+    
+#pragma omp parallel for
+    for (long i0 = 0; i0 < dst.n0; i0++) {
+	double x = (2*i0 > dst.n0) ? (i0 - dst.n0) : (i0);
+
+	for (long i1 = 0; i1 < dst.n1; i1++) {
+	    double y = (2*i1 > dst.n1) ? (i1 - dst.n1) : (i1);	    
+	    complex<double> *dp = dst.data + (i0 * dst.s0) + (i1 * dst.s1);
+	    const complex<double> *sp = src.data + (i0 * src.s0) + (i1 * src.s1);
+	    
+	    for (long i2 = 0; i2 < dst.n2; i2++) {
+		double z = i2;
+		bool dc = (i0+i1+i2) == 0;
+		bool nyq = (2*i0 == dst.n0) || (2*i1 == dst.n1) || (2*i2 == nz);
+		
+		double xli = (nyq || dc) ? 0.0 : h.get(x, y, z);
 		dp[i2 * dst.s2] = xli * sp[i2 * src.s2];
 	    }
 	}

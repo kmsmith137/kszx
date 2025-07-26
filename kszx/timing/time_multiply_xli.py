@@ -15,7 +15,7 @@ def time_multiply_xli_real_space(box_nside=1024, niter=10, l=5, i=1):
 
     t0 = time.time()
     for _ in range(niter):
-        cpp_kernels.multiply_xli_real_space(dst, src, l, i, 1.0, 1.0, 1.0, 1.0)
+        cpp_kernels.multiply_xli_real_space(dst, src, l, i, 1.0, 1.0, 1.0, 1.0, 1.0, False)
         
     dt = time.time() - t0
     nbytes = 16 * niter * box_nside**3
@@ -30,7 +30,7 @@ def time_multiply_xli_fourier_space(box_nside=1024, niter=10, l=5, i=1):
 
     t0 = time.time()
     for _ in range(niter):
-        cpp_kernels.multiply_xli_fourier_space(dst, src, l, i, box_nside)
+        cpp_kernels.multiply_xli_fourier_space(dst, src, l, i, box_nside, 1.0, False)
         
     dt = time.time() - t0
     nbytes = 16 * niter * box_nside**3

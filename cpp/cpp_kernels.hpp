@@ -43,11 +43,12 @@ extern py::tuple kbin_average(py::array_t<const double> &fk, py::array_t<const d
 
 
 extern void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double> &src_, int l, int i,
-				    double lpos0, double lpos1, double lpos2, double pixsize);
+				    double lpos0, double lpos1, double lpos2, double pixsize, double coeff,
+				    bool accum);
 
 extern void multiply_xli_fourier_space(py::array_t<std::complex<double>> &dst_,
 				       py::array_t<const std::complex<double>> &src_,
-				       int l, int i, long nz);
+				       int l, int i, long nz, double coeff_im, bool accum);
 
 
 // -------------------------------------------------------------------------------------------------

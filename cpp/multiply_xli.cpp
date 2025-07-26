@@ -1,11 +1,29 @@
+// FIXME the functions multiply_xli_{real,fourier}_space() aren't
+// super well optimized.
+//
+// If you run:
+//   OMP_NUM_THREADS=1 python -m kszx time
+//
+// Then you'll see that it's a lot slower than it should be.
+//
+// I haven't tried diagnosing the slowness, but I bet it would help
+// to introduce some length-4 (or length-8?) arrays, to help the
+// compiler emit simd instructions. (However, the first thing to check
+// is how the speed compares to the FFT itself.)
+
 #include <omp.h>
 #include <cmath>
 #include "cpp_kernels.hpp"
 
 using namespace std;
 
-
 static constexpr int Lmax = 8;
+
+
+inline complex<double> mult_i(complex<double> z)
+{
+    return complex<double> (-z.imag(), z.real());
+}
 
 
 struct xlm_helper
@@ -94,9 +112,6 @@ struct xlm_helper
 };
 
 
-// -------------------------------------------------------------------------------------------------
-
-
 // Can be used either for real-space maps (T=double) or Fourier-space (T=complex<double>).
 template<typename T>
 struct grid_helper
@@ -129,17 +144,12 @@ struct grid_helper
 };
 
 
-void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double> &src_, int l, int i, double lpos0, double lpos1, double lpos2, double pixsize)
+// -------------------------------------------------------------------------------------------------
+
+
+template<bool Accum>
+inline void _multiply_xli_real_space(grid_helper<double> &dst, grid_helper<const double> &src, xlm_helper &h, double lpos0, double lpos1, double lpos2, double pixsize, double coeff)
 {
-    grid_helper<double> dst(dst_);
-    grid_helper<const double> src(src_);
-    xlm_helper h(l,i);
-
-    if ((dst.n0 != src.n0) || (dst.n1 != src.n1) || (dst.n2 != src.n2))
-	throw std::runtime_error("expected dst/src maps to have the same shapes");
-    if (pixsize <= 0)
-	throw std::runtime_error("expected pixsize > 0");    
-
 #pragma omp parallel for
     for (long i0 = 0; i0 < dst.n0; i0++) {
 	double x = lpos0 + (i0 * pixsize);
@@ -151,25 +161,39 @@ void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double
 	    for (long i2 = 0; i2 < dst.n2; i2++) {
 		double z = lpos2 + (i2 * pixsize);
 		double xli = h.get(x, y, z);
-		
-		dp[i2 * dst.s2] = xli * sp[i2 * src.s2];
+		double v = coeff * xli * sp[i2 * src.s2];
+
+		if constexpr (Accum)
+		    dp[i2 * dst.s2] += v;
+		else
+		    dp[i2 * dst.s2] = v;
 	    }
 	}
     }
 }
 
 
-void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<const complex<double>> &src_, int l, int i, long nz)
+void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double> &src_, int l, int i, double lpos0, double lpos1, double lpos2, double pixsize, double coeff, bool accum)
 {
-    grid_helper<complex<double>> dst(dst_);
-    grid_helper<const complex<double>> src(src_);
+    grid_helper<double> dst(dst_);
+    grid_helper<const double> src(src_);
     xlm_helper h(l,i);
 
     if ((dst.n0 != src.n0) || (dst.n1 != src.n1) || (dst.n2 != src.n2))
 	throw std::runtime_error("expected dst/src maps to have the same shapes");
-    if (dst.n2 != (nz/2)+1)
-	throw std::runtime_error("dst/src map shape is inconsistent with 'nz' argument");
-    
+    if (pixsize <= 0)
+	throw std::runtime_error("expected pixsize > 0");    
+
+    if (accum)
+	_multiply_xli_real_space<true> (dst, src, h, lpos0, lpos1, lpos2, pixsize, coeff);
+    else
+	_multiply_xli_real_space<false> (dst, src, h, lpos0, lpos1, lpos2, pixsize, coeff);
+}
+
+
+template<bool Accum>
+inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_helper<const complex<double>> &src, xlm_helper &h, long nz, double coeff_im)
+{
     double rec_nz = 1.0 / nz;
     
 #pragma omp parallel for
@@ -189,8 +213,31 @@ void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<
 		bool nyq = (2*i0 == dst.n0) || (2*i1 == dst.n1) || (2*i2 == nz);
 		
 		double xli = (nyq || dc) ? 0.0 : h.get(x, y, z);
-		dp[i2 * dst.s2] = xli * sp[i2 * src.s2];
+		complex<double> v = mult_i(coeff_im * xli * sp[i2 * src.s2]);
+
+		if constexpr (Accum)
+		    dp[i2 * dst.s2] += v;
+		else
+		    dp[i2 * dst.s2] = v;
 	    }
 	}
-    }
+    }    
+}
+
+
+void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<const complex<double>> &src_, int l, int i, long nz, double coeff_im, bool accum)
+{
+    grid_helper<complex<double>> dst(dst_);
+    grid_helper<const complex<double>> src(src_);
+    xlm_helper h(l,i);
+
+    if ((dst.n0 != src.n0) || (dst.n1 != src.n1) || (dst.n2 != src.n2))
+	throw std::runtime_error("expected dst/src maps to have the same shapes");
+    if (dst.n2 != (nz/2)+1)
+	throw std::runtime_error("dst/src map shape is inconsistent with 'nz' argument");
+
+    if (accum)
+	_multiply_xli_fourier_space<true> (dst, src, h, nz, coeff_im);
+    else
+	_multiply_xli_fourier_space<false> (dst, src, h, nz, coeff_im);
 }

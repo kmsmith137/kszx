@@ -66,6 +66,7 @@ def fft_r2c(box, arr, spin=0, threads=None):
 
     assert isinstance(box, Box)
     assert box.is_real_space_map(arr)   # check shape and dtype of input array
+    assert spin >= 0
 
     if threads is None:
         threads = utils.get_nthreads()
@@ -77,22 +78,20 @@ def fft_r2c(box, arr, spin=0, threads=None):
         ret *= box.pixel_volume   # see Fourier conventions in docstring
         return ret                # numpy array with shape=box.fourier_space_shape and dtype=complex.
 
-    if spin != 1:
-        raise RuntimeError('fft_r2c(): currently we support only spin=0 and spin=1')
+    # Higher-spin FFT follows.
 
-    # Spin-1 FFT follows.
+    if box.ndim != 3:
+        raise RuntimeError('fft_r2c(): currently we only implement higher-spin FFTs in 3-d')
     
-    ret = np.zeros(box.fourier_space_shape, dtype=complex)
-    
-    for axis in range(box.ndim):
-        t = multiply_rfunc(box, arr, lambda r: 1./r, regulate=True)
-        t *= box.get_r_component(axis)
-        t = fft_r2c(box, t, spin=0, threads=threads)
-        t *= -1j * box.get_k_component(axis, zero_nyquist=True)  # note minus sign here
-        ret += t
-        del t
+    ret = np.empty(box.fourier_space_shape, dtype=complex)
+    tmp = np.empty(box.real_space_shape, dtype=float)
 
-    multiply_kfunc(box, ret, lambda k: 1./k, dc=0, in_place=True)
+    for i in range(2*spin+1):
+        # FIXME is there a way to do an in-place FFT here? (to avoid allocating tmp2)
+        cpp_kernels.multiply_xli_real_space(tmp, arr, spin, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, 1.0, False);
+        tmp2 = scipy.fft.rfftn(tmp, overwrite_x=True, workers=threads)
+        cpp_kernels.multiply_xli_fourier_space(ret, tmp2, spin, i, box.npix[2], -box.pixel_volume, (i > 0))
+    
     return ret
     
 
@@ -161,22 +160,20 @@ def fft_c2r(box, arr, spin=0, threads=None):
         ret *= (1.0 / box.pixel_volume)    # see Fourier conventions in docstring
         return ret                         # numpy array with shape=box.real_space shape and dtype=complex.
 
-    if spin != 1:
-        raise RuntimeError('fft_c2r(): currently we support only spin=0 and spin=1')
+    if box.ndim != 3:
+        raise RuntimeError('fft_c2r(): currently we only implement higher-spin FFTs in 3-d')
 
-    # Spin-1 FFT follows.
+    # Higher-spin FFT follows.
     
-    ret = np.zeros(box.real_space_shape, dtype=float)
-    
-    for axis in range(box.ndim):
-        t = multiply_kfunc(box, arr, lambda k: 1./k, dc=0.)
-        t *= 1j * box.get_k_component(axis, zero_nyquist=True)
-        t = fft_c2r(box, t, spin=0)
-        t *= box.get_r_component(axis)
-        ret += t
-        del t
+    ret = np.empty(box.real_space_shape, dtype=float)
+    tmp = np.empty(box.fourier_space_shape, dtype=complex)
 
-    multiply_rfunc(box, ret, lambda r: 1./r, regulate=True, in_place=True)
+    for i in range(2*spin+1):
+        # FIXME is there a way to do an in-place FFT here? (to avoid allocating tmp2)
+        cpp_kernels.multiply_xli_fourier_space(tmp, arr, spin, i, box.npix[2], 1.0 / box.pixel_volume, False)
+        tmp2 = scipy.fft.irfftn(tmp, box.npix, overwrite_x=True, workers=threads)
+        cpp_kernels.multiply_xli_real_space(ret, tmp2, spin, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, 1.0, (i > 0))
+    
     return ret
 
 
@@ -724,6 +721,35 @@ def apply_partial_derivative(box, arr, axis, dest=None, in_place=True):
     return _multiply(arr, ki, dest, in_place)
 
 
+def zero_nyquist_modes(box, arr, zero_dc=False):
+    r"""Given Fourier-space map 'arr', zero Nyquist frequencies (if npix is even) along all axes.
+
+    Function args:
+
+        - ``box`` (kszx.Box): defines pixel size, bounding box size, and location of observer.
+          See :class:`~kszx.Box` for more info.
+        
+        - ``arr``: numpy array representing a Fourier-space map. (The array shape should be given by
+          ``box.fourier_space_shape`` and the dtype should be ``complex``, see note below.)
+
+        - ``zero_dc``: if True, then the DC mode (k=0) is also zeroed.
+    """
+
+    # We allow arr to have non-complex dtype.
+    # The case dtype=float arises in tests.test_fft.xli_fs_box().
+    assert isinstance(box, Box)
+    assert arr.shape == box.fourier_space_shape
+
+    for axis, npix in enumerate(box.npix):
+        if (npix % 2) == 0:
+            s = (slice(None),)* axis + (npix//2,) + (slice(None),) * (box.ndim-axis-1)
+            arr[s] = 0
+            
+    if zero_dc:
+        s = (0,)*box.ndim
+        arr[s] = 0
+
+    
 ####################################################################################################
 
 

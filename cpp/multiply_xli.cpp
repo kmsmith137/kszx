@@ -20,12 +20,6 @@ using namespace std;
 static constexpr int Lmax = 8;
 
 
-inline complex<double> mult_i(complex<double> z)
-{
-    return complex<double> (-z.imag(), z.real());
-}
-
-
 struct xlm_helper
 {
     int l;   // 0 <= l <= lmax
@@ -192,7 +186,7 @@ void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double
 
 
 template<bool Accum>
-inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_helper<const complex<double>> &src, xlm_helper &h, long nz, double coeff_im)
+inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_helper<const complex<double>> &src, xlm_helper &h, long nz, complex<double> coeff)
 {
     double rec_nz = 1.0 / nz;
     
@@ -213,7 +207,7 @@ inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_
 		bool nyq = (2*i0 == dst.n0) || (2*i1 == dst.n1) || (2*i2 == nz);
 		
 		double xli = (nyq || dc) ? 0.0 : h.get(x, y, z);
-		complex<double> v = mult_i(coeff_im * xli * sp[i2 * src.s2]);
+		complex<double> v = coeff * xli * sp[i2 * src.s2];
 
 		if constexpr (Accum)
 		    dp[i2 * dst.s2] += v;
@@ -225,7 +219,7 @@ inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_
 }
 
 
-void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<const complex<double>> &src_, int l, int i, long nz, double coeff_im, bool accum)
+void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<const complex<double>> &src_, int l, int i, long nz, complex<double> coeff, bool accum)
 {
     grid_helper<complex<double>> dst(dst_);
     grid_helper<const complex<double>> src(src_);
@@ -236,8 +230,18 @@ void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<
     if (dst.n2 != (nz/2)+1)
 	throw std::runtime_error("dst/src map shape is inconsistent with 'nz' argument");
 
+    double x = (l & 1) ? coeff.real() : coeff.imag();
+    
+    if (x != 0.0) {
+	std::stringstream ss;
+	ss << "multiply_xli_fourier_space(l=" << l << "): expected coeff."
+	   << ((l & 1) ? "real" : "imag")
+	   << "=0, got " << x;
+	throw std::runtime_error(ss.str());
+    }
+
     if (accum)
-	_multiply_xli_fourier_space<true> (dst, src, h, nz, coeff_im);
+	_multiply_xli_fourier_space<true> (dst, src, h, nz, coeff);
     else
-	_multiply_xli_fourier_space<false> (dst, src, h, nz, coeff_im);
+	_multiply_xli_fourier_space<false> (dst, src, h, nz, coeff);
 }

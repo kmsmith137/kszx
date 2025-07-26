@@ -48,7 +48,8 @@ extern void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const
 
 extern void multiply_xli_fourier_space(py::array_t<std::complex<double>> &dst_,
 				       py::array_t<const std::complex<double>> &src_,
-				       int l, int i, long nz, double coeff_im, bool accum);
+				       int l, int i, long nz, std::complex<double> coeff,
+				       bool accum);
 
 
 // -------------------------------------------------------------------------------------------------

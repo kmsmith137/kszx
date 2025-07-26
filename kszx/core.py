@@ -85,12 +85,13 @@ def fft_r2c(box, arr, spin=0, threads=None):
     
     ret = np.empty(box.fourier_space_shape, dtype=complex)
     tmp = np.empty(box.real_space_shape, dtype=float)
+    phase = (-1j) if (spin % 2) else (1+0j)   # note (-i), not (+i)
 
     for i in range(2*spin+1):
         # FIXME is there a way to do an in-place FFT here? (to avoid allocating tmp2)
         cpp_kernels.multiply_xli_real_space(tmp, arr, spin, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, 1.0, False);
         tmp2 = scipy.fft.rfftn(tmp, overwrite_x=True, workers=threads)
-        cpp_kernels.multiply_xli_fourier_space(ret, tmp2, spin, i, box.npix[2], -box.pixel_volume, (i > 0))
+        cpp_kernels.multiply_xli_fourier_space(ret, tmp2, spin, i, box.npix[2], phase * box.pixel_volume, (i > 0))
     
     return ret
     
@@ -167,10 +168,11 @@ def fft_c2r(box, arr, spin=0, threads=None):
     
     ret = np.empty(box.real_space_shape, dtype=float)
     tmp = np.empty(box.fourier_space_shape, dtype=complex)
-
+    phase = (1j) if (spin % 2) else (1+0j)   # note (+i), not (-i)
+    
     for i in range(2*spin+1):
         # FIXME is there a way to do an in-place FFT here? (to avoid allocating tmp2)
-        cpp_kernels.multiply_xli_fourier_space(tmp, arr, spin, i, box.npix[2], 1.0 / box.pixel_volume, False)
+        cpp_kernels.multiply_xli_fourier_space(tmp, arr, spin, i, box.npix[2], phase / box.pixel_volume, False)
         tmp2 = scipy.fft.irfftn(tmp, box.npix, overwrite_x=True, workers=threads)
         cpp_kernels.multiply_xli_real_space(ret, tmp2, spin, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, 1.0, (i > 0))
     

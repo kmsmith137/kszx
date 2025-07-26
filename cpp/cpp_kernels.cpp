@@ -45,5 +45,5 @@ PYBIND11_MODULE(cpp_kernels, m)
 
     m.def("multiply_xli_fourier_space", multiply_xli_fourier_space,
 	  py::arg("dst"), py::arg("src"), py::arg("l"), py::arg("i"),
-	  py::arg("nz"), py::arg("coeff_im"), py::arg("accum"));
+	  py::arg("nz"), py::arg("coeff"), py::arg("accum"));
 }

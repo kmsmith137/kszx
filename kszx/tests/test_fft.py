@@ -97,14 +97,14 @@ def test_multiply_xli_fourier_space():
         box = helpers.random_box(ndim=3, nmin=3)
         l = np.random.randint(9)
         i = np.random.randint(2*l+1)
-        coeff_im = np.random.uniform()
+        coeff = np.random.uniform() * (1j if (l % 2) else 1+0j)
         accum = (np.random.uniform() < 0.5)
 
         fs = box.fourier_space_shape
         src = np.random.normal(size=fs) + 1j*np.random.normal(size=fs)
         dst1 = np.random.normal(size=fs) + 1j*np.random.normal(size=fs)
-        dst2 = (1j * coeff_im * xli_fs_box(l,i,box) * src) + (dst1 if accum else 0)
-        cpp_kernels.multiply_xli_fourier_space(dst1, src, l, i, box.npix[2], coeff_im, accum)
+        dst2 = (coeff * xli_fs_box(l,i,box) * src) + (dst1 if accum else 0)
+        cpp_kernels.multiply_xli_fourier_space(dst1, src, l, i, box.npix[2], coeff, accum)
                     
         eps = np.max(np.abs(dst1-dst2))
         # print(f'{eps=} {l=} {i=} {box.npix=}')
@@ -226,18 +226,17 @@ def reference_fft_r2c_spin2(box, arr):
     core.multiply_kfunc(box, ret, lambda k: 1./k**2, dc=0, in_place=True)
     ret -= 0.5 * core.fft_r2c(box, arr, spin=0)
     
-    core.zero_nyquist_modes(box, ret)
+    core.zero_nyquist_modes(box, ret, zero_dc=True)
     return ret
     
 
 def test_spin_12_ffts():
     """Compares spin-l FFTs to reference implementations of spin-1 and spin-2."""
     
-    print('test_fft_transposes(): start')
+    print('test_spin_12_ffts(): start')
      
     for _ in range(100):
         box = helpers.random_box(ndim=3, nmin=3)
-        box = Box((3,3,3), pixsize=1.0)
 
         # Part 1: spin-1 r2c
         
@@ -264,15 +263,12 @@ def test_spin_12_ffts():
         # Part 3: spin-2 r2c
         
         src = core.simulate_white_noise(box, fourier=False)
-        src = utils.one_hot((3,3,3), (2,2,2))
         dst1 = core.fft_r2c(box, src, spin=2)
         dst2 = reference_fft_r2c_spin2(box, src)
         
         num = np.max(np.abs(dst1-dst2))
         den = np.max(np.abs(dst1)) + np.max(np.abs(dst2))
         eps = num/den
-        print(f'{eps=}')
-        print(f'{dst1[1,1,1]=} {dst2[1,1,1]=}')
         assert eps < 1.0e-12
         
-    print('test_fft_transposes(): pass')
+    print('test_spin_12_ffts(): pass')

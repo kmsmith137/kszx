@@ -188,7 +188,7 @@ FFTs with nonzero "spin"
    optional argument also occurs in scattered functions which include an FFT step.
    For example, :func:`~kszx.grid_points()` with ``fft=True``.
 
-.. _fft_implementation
+.. _fft_implementation:
 
 FFT implementation notes
 ^^^^^^^^^^^^^^^^^^^^^^^^

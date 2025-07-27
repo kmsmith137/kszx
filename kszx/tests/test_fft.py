@@ -31,7 +31,10 @@ def xli_rs_box(l, i, box):
 def xli_fs_box(l, i, box):
     xyz = [ box.get_k_component(axis) for axis in range(3) ]
     xli = xli_xyz(l, i, xyz[0], xyz[1], xyz[2])
-    core.zero_nyquist_modes(box, xli, zero_dc=True)
+    
+    if l > 0:
+        core.zero_nyquist_modes(box, xli, zero_dc=True)
+    
     return xli
 
 

@@ -4,12 +4,20 @@
 // If you run:
 //   OMP_NUM_THREADS=1 python -m kszx time
 //
-// Then you'll see that it's a lot slower than it should be.
+// then you'll see that it's a lot slower than it should be. (To
+// avoid multiply_xli being a bottleneck in single-threaded FFTs,
+// I'd like to make it close to memory bandwidth limited.)
 //
 // I haven't tried diagnosing the slowness, but I bet it would help
 // to introduce some length-4 (or length-8?) arrays, to help the
-// compiler emit simd instructions. (However, the first thing to check
-// is how the speed compares to the FFT itself.)
+// compiler emit simd instructions.
+//
+// For more info on what these functions compute, see "FFT implementation"
+// in the sphinx docs:
+//
+//   https://kszx.readthedocs.io/en/latest/fft.html#fft-implementation
+//
+// or the reference implementation in kszx/tests/test_fft.py.
 
 #include <omp.h>
 #include <cmath>
@@ -141,9 +149,37 @@ struct grid_helper
 // -------------------------------------------------------------------------------------------------
 
 
+// Called for l=0.
+template<bool Accum, typename T>
+inline void _multiply_x00(grid_helper<T> &dst, grid_helper<const T> &src, T coeff)
+{
+#pragma omp parallel for
+    for (long i0 = 0; i0 < dst.n0; i0++) {
+	for (long i1 = 0; i1 < dst.n1; i1++) {
+	    double *dp = dst.data + (i0 * dst.s0) + (i1 * dst.s1);
+	    const double *sp = src.data + (i0 * src.s0) + (i1 * src.s1);
+	    
+	    for (long i2 = 0; i2 < dst.n2; i2++) {
+		double v = coeff * sp[i2 * src.s2];
+
+		if constexpr (Accum)
+		    dp[i2 * dst.s2] += v;
+		else
+		    dp[i2 * dst.s2] = v;
+	    }
+	}
+    }
+}
+
+
 template<bool Accum>
 inline void _multiply_xli_real_space(grid_helper<double> &dst, grid_helper<const double> &src, xlm_helper &h, double lpos0, double lpos1, double lpos2, double pixsize, double coeff)
 {
+    if (h.l == 0) {
+	_multiply_x00<Accum> (dst, src, coeff);
+	return;
+    }
+	
 #pragma omp parallel for
     for (long i0 = 0; i0 < dst.n0; i0++) {
 	double x = lpos0 + (i0 * pixsize);
@@ -188,6 +224,12 @@ void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double
 template<bool Accum>
 inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_helper<const complex<double>> &src, xlm_helper &h, long nz, complex<double> coeff)
 {
+    if (h.l == 0) {
+	// Note that for l=0, we don't zero the DC/nyquist modes.
+	_multiply_x00<Accum> (dst, src, coeff);
+	return;
+    }
+
     double rec_nz = 1.0 / nz;
     
 #pragma omp parallel for

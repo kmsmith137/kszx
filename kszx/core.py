@@ -20,7 +20,7 @@ def fft_r2c(box, arr, spin=0, threads=None):
 
         - ``arr`` (array): numpy array representing a real-space map (dtype=float).
 
-        - ``spin`` (integer): currently only spin=0 and spin=1 are supported.
+        - ``spin`` (integer): the "spin" of the FFT (sometimes denoted $l$), see below.
 
         - ``threads`` (integer or None): number of parallel threads used.
           If ``threads=None``, then number of threads defaults to :func:`~kszx.utils.get_nthreads()`.
@@ -43,25 +43,26 @@ def fft_r2c(box, arr, spin=0, threads=None):
 
           $$f(x) = V_{box}^{-1} \sum_k f(k) e^{ik\cdot x}$$
 
-       - We define spin-1 Fourier transforms by inserting an extra factor
-         $(\pm i {\hat k} \cdot {\hat r})$:
+       - We define spin-l Fourier transforms by inserting an extra factor
+         $(\epsilon P_l({\hat k} \cdot {\hat r})$:
 
-          $$f(k) = V_{pix} \sum_x f(x) (-i {\hat k} \cdot {\hat r}) e^{-ik\cdot x}$$
+          $$f(k) = V_{pix} \sum_x \epsilon^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x}$$
 
-          $$f(x) = V_{box}^{-1} \sum_k f(k) (i {\hat k} \cdot {\hat r}) e^{ik\cdot x}$$
+          $$f(x) = V_{box}^{-1} \sum_k \epsilon P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x}$$
 
          where the line-of-sight direction $\hat r$ is defined in "observer coordinates"
-         (see :class:`~kszx.Box` for more info).
+         (see :class:`~kszx.Box` for more info), and our convention for the phase $\epsilon$ is:
 
-         Application: the spin-1 c2r transform can be used to compute the radial velocity
-         field from the density field (with a factor $faH/k$).
+          $$\epsilon = \begin{cases}
+          i & \mbox{if $l$ is odd} \\
+          1 & \mbox{if $l$ is even}
+          \end{cases}$$
 
-         Another application: the spin-1 r2c transform can be used to estimate $P_{gv}(k)$
-         or $P_{vv}(k)$ from the radial velocity field (or the kSZ velocity reconstruction),
-         by calling :func:`~kszx.fft_r2c()` followed by :func:`~kszx.estimate_power_spectrum()`.
+         Spin-$l$ transforms are useful because they are building blocks for "natural" applications
+         such as radial velocities, RSDs, and anisotropic power spectrum estimators. For more detail,
+         see the sphinx docs:
 
-       - At some point in the future, I'll define spin-$l$ transforms, with an
-         extra factor $(\pm i^l P_l({\hat k} \cdot {\hat r}))$.
+           https://kszx.readthedocs.io/en/latest/fft.html#ffts-with-spin
     """
 
     assert isinstance(box, Box)
@@ -104,7 +105,7 @@ def fft_c2r(box, arr, spin=0, threads=None):
 
         - ``arr``: numpy array representing a Fourier-space map (dtype=complex).
 
-        - ``spin``: currently only spin=0 and spin=1 are supported.
+        - ``spin`` (integer): the "spin" of the FFT (sometimes denoted $l$), see below.
 
         - ``threads`` (integer or None): number of parallel threads used.
           If ``threads=None``, then number of threads defaults to :func:`~kszx.utils.get_nthreads()`.
@@ -127,25 +128,26 @@ def fft_c2r(box, arr, spin=0, threads=None):
 
           $$f(x) = V_{box}^{-1} \sum_k f(k) e^{ik\cdot x}$$
 
-       - We define spin-1 Fourier transforms by inserting an extra factor
-         $(\pm i {\hat k} \cdot {\hat r})$:
+       - We define spin-l Fourier transforms by inserting an extra factor
+         $(\epsilon P_l({\hat k} \cdot {\hat r})$:
 
-          $$f(k) = V_{pix} \sum_x f(x) (-i {\hat k} \cdot {\hat r}) e^{-ik\cdot x}$$
+          $$f(k) = V_{pix} \sum_x \epsilon^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x}$$
 
-          $$f(x) = V_{box}^{-1} \sum_k f(k) (i {\hat k} \cdot {\hat r}) e^{ik\cdot x}$$
+          $$f(x) = V_{box}^{-1} \sum_k \epsilon P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x}$$
 
          where the line-of-sight direction $\hat r$ is defined in "observer coordinates"
-         (see :class:`~kszx.Box` for more info).
+         (see :class:`~kszx.Box` for more info), and our convention for the phase $\epsilon$ is:
 
-         Application: the spin-1 c2r transform can be used to compute the radial velocity
-         field from the density field (with a factor $faH/k$).
+          $$\epsilon = \begin{cases}
+          i & \mbox{if $l$ is odd} \\
+          1 & \mbox{if $l$ is even}
+          \end{cases}$$
 
-         Another application: the spin-1 r2c transform can be used to estimate $P_{gv}(k)$
-         or $P_{vv}(k)$ from the radial velocity field (or the kSZ velocity reconstruction),
-         by calling :func:`~kszx.fft_r2c()` followed by :func:`~kszx.estimate_power_spectrum()`.
+         Spin-$l$ transforms are useful because they are building blocks for "natural" applications
+         such as radial velocities, RSDs, and anisotropic power spectrum estimators. For more detail,
+         see the sphinx docs:
 
-       - At some point in the future, I'll define spin-$l$ transforms, with an
-         extra factor $(\pm i^l P_l({\hat k} \cdot {\hat r}))$.
+           https://kszx.readthedocs.io/en/latest/fft.html#ffts-with-spin
     """
     
     assert isinstance(box, Box)

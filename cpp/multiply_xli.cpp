@@ -156,11 +156,11 @@ inline void _multiply_x00(grid_helper<T> &dst, grid_helper<const T> &src, T coef
 #pragma omp parallel for
     for (long i0 = 0; i0 < dst.n0; i0++) {
 	for (long i1 = 0; i1 < dst.n1; i1++) {
-	    double *dp = dst.data + (i0 * dst.s0) + (i1 * dst.s1);
-	    const double *sp = src.data + (i0 * src.s0) + (i1 * src.s1);
+	    T *dp = dst.data + (i0 * dst.s0) + (i1 * dst.s1);
+	    const T *sp = src.data + (i0 * src.s0) + (i1 * src.s1);
 	    
 	    for (long i2 = 0; i2 < dst.n2; i2++) {
-		double v = coeff * sp[i2 * src.s2];
+		T v = coeff * sp[i2 * src.s2];
 
 		if constexpr (Accum)
 		    dp[i2 * dst.s2] += v;

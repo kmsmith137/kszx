@@ -159,8 +159,8 @@ FFTs with nonzero "spin"
 
  - Application 4: anisotropic power spectrum estimation.
    For example, consider the spin-$l$ anisotropic power spectrum estimator $\hat P_l(k)$
-   defined in Hand et al (1704.02357). To implement this estimator, we cross-correlate
-   the spin-0 and spin-$l$ FFTs. Code might look like this::
+   defined in Hand, Li, Slepian, and Seljak (1704.02357). To implement this estimator,
+   we cross-correlate the spin-0 and spin-$l$ FFTs. Code might look like this::
 
      box = kszx.Box(...)
      kbin_edges = np.linspace(0, 0.1, 11)   # kmax=0.1, nkbins=10
@@ -200,9 +200,9 @@ $$P_l({\hat k} \cdot {\hat r}) = \sum_{i=0}^{2l} X_{li}({\hat k}) X_{li}({\hat r
 where we define real spherical harmonics $\{ X_{li} \}_{0 \le i < 2l+1}$ by:
 
 $$X_{li}({\hat r}) = \begin{cases}
-\sqrt{4\pi/(2l+1)} Y_{l0}({\hat r)) & \mbox{if $i=0$} \\
-\sqrt{8\pi/(2l+1)} \mbox{Re} Y_{lm}({\hat r)) & \mbox{if $i=2m-1$ where $m\ge 1$} \\
-\sqrt{8\pi/(2l+1)} \mbox{Im} Y_{lm}({\hat r)) & \mbox{if $i=2m$ where $m\ge 1$}
+\sqrt{4\pi/(2l+1)} \, Y_{l0}({\hat r}) & \mbox{if $i=0$} \\
+\sqrt{8\pi/(2l+1)} \, \mbox{Re} \, Y_{lm}({\hat r}) & \mbox{if $i=2m-1$ where $m\ge 1$} \\
+\sqrt{8\pi/(2l+1)} \, \mbox{Im} \, Y_{lm}({\hat r}) & \mbox{if $i=2m$ where $m\ge 1$}
 \end{cases}$$
 
 Then the spin-$l$ FFT can be written as a sum of $(2l+1)$ ordinary (spin-0) FFTs.
@@ -210,5 +210,5 @@ We write this out explicitly for the c2r transform:
 
 $$\begin{align}
 f(x) &= V_{box}^{-1} \sum_k \epsilon P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x} \\
-&= V_{box}^{-1} \sum_{i=0}^{2l} X_{li}(x) \sum_k \epsilon X_{li}(k) f(k) e^{ik\cdot x}
+&= \epsilon V_{box}^{-1} \sum_{i=0}^{2l} X_{li}(x) \sum_k X_{li}(k) f(k) e^{ik\cdot x}
 \end{align}$$

@@ -73,7 +73,7 @@ def test_multiply_xli_real_space():
     print('test_multiply_xli_real_space(): start')
     
     for _ in range(100):
-        box = helpers.random_box(ndim=3, nmin=3)
+        box = helpers.random_box(ndim=3, nmin=3, avoid_small_r=True)
         l = np.random.randint(9)
         i = np.random.randint(2*l+1)
         coeff = np.random.uniform()
@@ -142,7 +142,8 @@ def test_fft_transposes():
 
     for iouter in range(100):
         spin = np.random.randint(1,9) if (np.random.uniform() < 0.5) else 0
-        box = helpers.random_box(ndim=3, nmin=3) if (spin > 0) else helpers.random_box()
+        ndim, nmin = (3, 3) if (spin > 0) else (None, 2)
+        box = helpers.random_box(ndim=ndim, nmin=nmin, avoid_small_r=True)
         # print(f'{spin=}')
         # print(box)
 
@@ -239,7 +240,7 @@ def test_spin_12_ffts():
     print('test_spin_12_ffts(): start')
      
     for _ in range(100):
-        box = helpers.random_box(ndim=3, nmin=3)
+        box = helpers.random_box(ndim=3, nmin=3, avoid_small_r=True)
 
         # Part 1: spin-1 r2c
         

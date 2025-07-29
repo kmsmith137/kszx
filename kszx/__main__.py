@@ -22,6 +22,7 @@ if __name__ == '__main__':
     p.add_argument('filename')
 
     p = subparsers.add_parser('test')
+    p = subparsers.add_parser('time')
 
     p = subparsers.add_parser('kszpipe_run')
     p.add_argument('input_dirname')
@@ -52,6 +53,13 @@ if __name__ == '__main__':
     elif args.command == 'test':
         from . import tests
         tests.run_all_tests()   # defined in kszx/tests/__init__.py
+    elif args.command == 'time':
+        from . import timing
+        from . import cpp_kernels
+        print(f'{cpp_kernels.omp_get_max_threads() = }')
+        timing.time_interpolation()
+        timing.time_multiply_xli_real_space()
+        timing.time_multiply_xli_fourier_space()
     elif args.command == 'kszpipe_run':
         from .KszPipe import KszPipe
         kszpipe = KszPipe(args.input_dirname, args.output_dirname)

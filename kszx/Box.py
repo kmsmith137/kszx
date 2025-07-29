@@ -195,7 +195,7 @@ class Box:
 
         Args:
             axis (integer): satisfies 0 <= axis < ndim.
-            one_dimensonal (booolean):
+            one_dimensonal (boolean):
                - if True, the returned array will have shape (N,), where N = self.npix[axis].
                - if False, the returned array will have shape (1,...,1, N, 1,...1).
 

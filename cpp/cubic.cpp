@@ -80,6 +80,7 @@ py::array_t<double> cubic_interpolate_3d(py::array_t<const double> &grid, py::ar
     py::array_t<double> ret({args.npoints});
     double *rdata = ret.mutable_data();
 
+#pragma omp parallel for schedule(guided,32)
     for (long i = 0; i < args.npoints; i++) {
 	double x, y, z;
 	args.get_xyz(i, x, y, z);

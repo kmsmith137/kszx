@@ -512,18 +512,18 @@ class Likelihood:
             if params is not None: plt.plot(self.k[start:end], self.k[start:end]**k_power*theory[start:end], ls=':', c='orange', zorder=1)
 
             if 'gg' in key:
-                plt.ylabel('$P^{gg}_{\ell=0}$ [Mpc$^3$]')
+                plt.ylabel(r'$P^{gg}_{\ell=0}$ [Mpc$^3$]')
                 plt.xscale('log')
                 plt.yscale('log')
             elif 'gv' in key:
                 if self.fields[key]['ell'][1] == 0:
-                    plt.ylabel('$P^{gv}_{\ell=0}$ [Mpc$^3$]')
+                    plt.ylabel(r'$P^{gv}_{\ell=0}$ [Mpc$^3$]')
                     plt.xscale('log')
                     plt.yscale('log')
                 else:
-                    plt.ylabel('$k P^{gv}_{\ell=1}$ [Mpc$^2$]')
+                    plt.ylabel(r'$k P^{gv}_{\ell=1}$ [Mpc$^2$]')
             else:
-                plt.ylabel('$k^2P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +',\ell=' + str(self.fields[key]['ell'][1]) + '}$ $[Mpc^3]$')
+                plt.ylabel(r'$k^2P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'}$ $[Mpc^3]$')
                 plt.xscale('log')
                 plt.yscale('log')
             plt.xlabel('$k$ [Mpc$^{-1}$]')

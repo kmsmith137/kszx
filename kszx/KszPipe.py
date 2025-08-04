@@ -720,7 +720,7 @@ class KszPipeOutdir:
         pvv = field[0][0] * self.surr_mean[self.binning['vv']][idx_vr_11,:,:] + field[0][1] * self.surr_mean[self.binning['vv']][idx_vr_12,:,:] # shape (#params_vel, #fields, nkbins)
         pvv = np.sum(params_vel[:, None, :] * pvv, axis=0) # shape (#fields, nkbins)
         pvv = field[1][0] * pvv[idx_vr_21,:] + field[1][1] * pvv[idx_vr_22,:]      # shape (#params_vel, nkbins)
-        return np.sum(params_vel[:, None] * pvv, axis=0) * self.D_v(self.k['vv'], sigmav)**2  # shape (nkbins)
+        return np.sum(params_vel[:, :] * pvv, axis=0) * self.D_v(self.k['vv'], sigmav)**2  # shape (nkbins)
 
     def pggxpgg_cov(self, b11=1, fnl1=0, sn1=1, sigmag1=0, b12=1, fnl2=0, sn2=1, sigmag2=0,
                     ell1=[0, 0], ell2=[0, 0]):
@@ -885,7 +885,7 @@ class KszPipeOutdir:
                     ell2=[0, 1]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gv}^{surr}(k) \times P_{gg}^{surr}(k)$."""
         
-        return self.pggxpgv_cov(b11=b12, fnl1=fnl2, sn1=sn2, sigmag1=sigmag2, b12=b11, fnl2=fnl1, bv2=bv1, snv2=snv1, bfg2=bfg1, sigmag2=sigmag1, sigmav2=sigmav2, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1).T
+        return self.pggxpgv_cov(b11=b12, fnl1=fnl2, sn1=sn2, sigmag1=sigmag2, b12=b11, fnl2=fnl1, bv2=bv1, snv2=snv1, bfg2=bfg1, sigmag2=sigmag1, sigmav2=sigmav1, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1).T
 
     def pgvxpvv_cov(self, b11=1, fnl1=0, sn1=1, bv1=1, snv1=1, bfg1=0, sigmag1=0, sigmav1=0, bv2=1, snv2=1, bfg2=0, sigmav2=0,
                     freq1=['90','150'], field1=[1,0], ell1=[0,1], 

@@ -211,7 +211,7 @@ class BaseLikelihood:
         """ Read mcmc already run """
         self.samples = np.load(fn_chain)
 
-    def show_mcmc(self, params=None, add_expected_value=True, add_chains=None, legend_label=None, colors=None, fig_width_inch=5, fn_fig=None):
+    def show_mcmc(self, params=None, add_expected_value=True, params_fid=None, add_chains=None, legend_label=None, colors=None, fig_width_inch=5, title_limit=None, fn_fig=None):
         r"""Makes a corner plot from MCMC results. Intended to be called from jupyter."""
 
         if not hasattr(self, 'gdsamples'):
@@ -235,13 +235,14 @@ class BaseLikelihood:
         contour_colors = colors
         line_args = None if colors is None else [{'color': cc} for cc in colors]
 
-        g.triangle_plot(to_display, params, filled=True, legend_labels=legend_label, contour_colors=contour_colors, line_args=line_args, show=False)
+        g.triangle_plot(to_display, params, filled=True, legend_labels=legend_label, contour_colors=contour_colors, line_args=line_args, title_limit=title_limit, show=False)
 
         if add_expected_value:
+            params = self.params if params is None else params
             # add expected value:
-            params_fid = [self.params[name]['ref'] for name in self.params]
-            for i in range(len(self.params)):
-                for irow in range(i, len(self.params)):
+            params_fid = [self.params[name]['ref'] for name in params] if params_fid is None else params_fid
+            for i in range(len(params)):
+                for irow in range(i, len(params)):
                     if params_fid[i] is not None: g.subplots[irow, i].axvline(params_fid[i], color='grey', ls=(0, (2, 3)), lw=1)
                     if irow > i :
                         if params_fid[irow] is not None: g.subplots[irow, i].axhline(params_fid[irow], color='grey', ls=(0, (2, 3)), lw=1)

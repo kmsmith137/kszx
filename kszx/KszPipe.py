@@ -173,7 +173,7 @@ class KszPipe:
         print('KszPipe.surrogate_factory initialized')
         return sf
     
-    def get_pk_data(self, run=False, force=False):
+    def get_pk_data(self, run=False, force=False, save_fourier_maps=False):
         r"""Returns the computed pk, and saves it in ``pipeline_outdir/pk_data.npy``.
 
         For spin_gal = [0], spin_vr = [0, 1] and cmb_fields = ['90', '150']. The returned array contains auto and cross power spectra of the following fields:
@@ -220,6 +220,13 @@ class KszPipe:
                 fourier_space_maps += [core.grid_points(self.box, gcat_xyz, coeffs[freq],  kernel=self.kernel, fft=True, spin=spin, compensate=True)]
                 w += [np.sum(vweights) / self.sum_rcat_vr_weights]
                 idx += [i + 1]
+
+        # save fourier maps to perform field level inference later on if needed.
+        if save_fourier_maps:
+            for i, kbin_edges in enumerate(self.kbin_edges):
+                # rebin the fourier space maps:
+                to_save = [core.kbin_average(self.box, mp, kbin_edges) for mp in fourier_space_maps]
+                io_utils.write_npy(f'{self.output_dir}/fourier_maps_{i}.npy', to_save)
 
         # Rescale window function (by roughly a factor Ngal/Nrand in each footprint).
         w = np.array(w)
@@ -585,9 +592,9 @@ class KszPipeOutdir:
         elif style == 'gv':
             if ell == [0,0]:
                 #print('Here we neglect the RSD from bfg for now !!! NEED TO BE FIXED')
-                b1_rsd = b1 + 1/3*self.f
+                b1_rsd = b1 + 1/3 * self.f
             elif ell == [0,1]:
-                b1_rsd = b1 + 3/5*self.f
+                b1_rsd = b1 + 3/5 * self.f
             else:
                 print(f'b1_rsd is not ready for {ell=} and {style=} ... We probably need to change in detail the surrogate production!')
                 import sys
@@ -595,12 +602,18 @@ class KszPipeOutdir:
         return b1_rsd
 
     def D_g(self, k, sigmag):
-        """Returns the damping factor $D_g(k, \sigma_g)$ for galaxy overdensity. It will be applied after the convolution with the window function i.e. direclty to the surrogate."""
+        """Returns the damping factor for galaxy overdensity. It will be applied after the convolution with the window function i.e. direclty to the surrogate."""
         return 1 / (1 + (k * sigmag)**2 / 2)
 
     def D_v(self, k, sigmav):
-        """Returns the damping factor $D_v(k, \sigma_v)$ for radial velocity. It will be applied after the convolution with the window function i.e direclty to the surrogate."""
+        """Returns the damping factor for radial velocity. It will be applied after the convolution with the window function i.e direclty to the surrogate."""
         return np.sinc(k*sigmav)
+
+    # def g_data(self, ell=0):
+    #     r"""Returns shape ``(nkbins,)`` array containing $P_{gg}^{data}(k)$ for galaxy overdensity with spin ``ell``."""
+    #     assert ell in self.spin_gal
+    #     idx = self.data_fields[f'gal-{ell}']
+    #     return self.pk_data[self.binning['gg']][idx, idx, :]
 
     def pgg_data(self, ell=[0, 0]):
         r"""Returns shape ``(nkbins,)`` array containing $P_{gg}^{data}(k)$."""
@@ -880,12 +893,12 @@ class KszPipeOutdir:
 
         return np.sum(field2[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pgvxpgg_cov(self, b11=1, fnl1=0, bv1=1, snv1=1, bfg1=0, sigmag1=0, sigmav1=0, b12=1, fnl2=0, sn2=1, sigmag2=0,
+    def pgvxpgg_cov(self, b11=1, fnl1=0, bv1=1, sn1=1, snv1=1, bfg1=0, sigmag1=0, sigmav1=0, b12=1, fnl2=0, sn2=1, sigmag2=0,
                     freq1=['90','150'], field1=[1,0], ell1=[0, 0], 
                     ell2=[0, 1]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gv}^{surr}(k) \times P_{gg}^{surr}(k)$."""
         
-        return self.pggxpgv_cov(b11=b12, fnl1=fnl2, sn1=sn2, sigmag1=sigmag2, b12=b11, fnl2=fnl1, bv2=bv1, snv2=snv1, bfg2=bfg1, sigmag2=sigmag1, sigmav2=sigmav1, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1).T
+        return self.pggxpgv_cov(b11=b12, fnl1=fnl2, sn1=sn2, sigmag1=sigmag2, b12=b11, fnl2=fnl1, bv2=bv1, sn2=sn1, snv2=snv1, bfg2=bfg1, sigmag2=sigmag1, sigmav2=sigmav1, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1).T
 
     def pgvxpvv_cov(self, b11=1, fnl1=0, sn1=1, bv1=1, snv1=1, bfg1=0, sigmag1=0, sigmav1=0, bv2=1, snv2=1, bfg2=0, sigmav2=0,
                     freq1=['90','150'], field1=[1,0], ell1=[0,1], 

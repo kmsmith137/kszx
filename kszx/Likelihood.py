@@ -149,7 +149,7 @@ class BaseLikelihood:
             if fn_fig is not None: plt.savefig(fn_fig)
             plt.show()
 
-    def run_profiling(self, nprofiles=5, fn_profile=None, verbose=True):
+    def run_profiling(self, nprofiles=5, fn_profile=None, maxiter=None, verbose=True):
         r"""Returns bestfit value for self.params after nprofiles different profiling with scipy.optimize.minimize.  """
 
         x0 = np.zeros((nprofiles, len(self.params)))
@@ -160,7 +160,7 @@ class BaseLikelihood:
 
         results = []
         for i in range(nprofiles):
-            results += [scipy.optimize.minimize(f, x0[i,:], method='Nelder-Mead')]
+            results += [scipy.optimize.minimize(f, x0[i,:], method='Nelder-Mead', options={'maxiter': maxiter})]
         
         # select the bestfit with the lowest log_likelihood:
         sel_min = np.argmin([result.fun for result in results])
@@ -171,8 +171,21 @@ class BaseLikelihood:
 
         return self.bestfit      
 
-    def run_mcmc(self, nwalkers=8, nsamples=10000, discard=1000, thin=5, extend_chain=False, fn_chain=None):
-        r""" Run mcmc with emcee. """
+
+    def run_mcmc(self, ncpu=1, nwalkers=8, nsamples=10000, discard=1000, thin=5, progress='notebook', extend_chain=False, fn_chain=None):
+        r""" 
+        Run mcmc with emcee. 
+
+        Parameters:
+        - nwalkers: number of walkers
+        - nsamples: number of samples to draw
+        - discard: number of samples to discard at the beginning of the chain (burnin phase)
+        - thin: thinning factor (only keep every `thin`-th sample)
+        - progress: 'notebook' or 'text' to show the progress bar of emcee (requires tqdm), False to disable it.
+        - extend_chain: if True, use the previous chain as a starting point for the new chain. If False, start from a random uniform distribution.
+        - fn_chain: if not None, save the chain to this file.
+        
+        """
         import emcee
         print(f'MCMC start: {nwalkers=}, {nsamples=}, {discard=}, {thin=}')
 
@@ -185,16 +198,22 @@ class BaseLikelihood:
 
         logL = lambda x: self.log_likelihood(*x)
 
-        # It does not seem to work in the notebook at NERSC for some reason...
-        # if ncpu is not None:
-        #     from multiprocessing import Pool
-        #     with Pool(ncpu) as pool:
-        #         sampler = emcee.EnsembleSampler(nwalkers, len(self.params), logL, pool=pool)
-        #         sampler.run_mcmc(x0, nsamples, progress=True)
+        # It is super slow ... in the notebook at NERSC for some reason...:
+        # First need to write a wrapper function to use the logL method (OUTSIDE the class):
+        # def logL(self, x):
+        #     print(x)
+        #     return self.log_likelihood(*x)
+        #from multiprocessing import Pool
+        #import kszx.utils as utils
+        #with utils.Pool(ncpu) as pool:
+        #from multiprocessing import Pool
+        #with Pool(ncpu) as pool:
+        #    sampler = emcee.EnsembleSampler(nwalkers, len(self.params), self.logL, pool=pool)
+        #    sampler.run_mcmc(x0, nsamples, progress=progress)
 
         if not extend_chain: self.sampler = emcee.EnsembleSampler(nwalkers, len(self.params), logL)
         sampler = self.sampler
-        sampler.run_mcmc(x0, nsamples, progress=False)
+        sampler.run_mcmc(x0, nsamples, progress=progress)
 
         self.samples = sampler.get_chain(discard=discard, thin=thin, flat=True)
         print('MCMC done. To see the results, call the show_mcmc() method.')
@@ -316,7 +335,7 @@ class BaseLikelihood:
         pte = scipy.stats.chi2.sf(chi2, ndof)
         snr = self.compute_snr(params)
         
-        return chi2, ndof, chi2 / ndof, snr, pte
+        return {'chi2': float(chi2), 'ndof': int(ndof), 'red_chi2': float(chi2 / ndof), 'snr': float(snr), 'pte': float(pte)}
 
 
 class Likelihood(BaseLikelihood):

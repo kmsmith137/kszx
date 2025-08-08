@@ -465,7 +465,7 @@ class KszPipe:
 ####################################################################################################
 
 class KszPipeOutdir:
-    def __init__(self, dirname, nsurr=None, p=1.0, binning={'gg':0, 'gv':0, 'vv':0}):
+    def __init__(self, dirname, nsurr=None, p=1.0, f=None, binning={'gg':0, 'gv':0, 'vv':0}):
         r"""A helper class for loading and processing output files from ``class KszPipe``.
 
         Note: for MCMCs and parameter fits, there is a separate class :class:`~kszx.PgvLikelihood`.
@@ -489,8 +489,8 @@ class KszPipeOutdir:
         filename = f'{dirname}/params.yml'
         print(f'Reading {filename}')
         
-        with open(filename, 'r') as f:
-            params = yaml.safe_load(f)
+        with open(filename, 'r') as ff:
+            params = yaml.safe_load(ff)
 
         kmin, kmax, kstep = params['kmin'], params['kmax'], params['kstep']
         kbin_edges = [np.arange(kmin[i], kmax[i], kstep[i]) for i in range(len(kmin))]
@@ -539,7 +539,11 @@ class KszPipeOutdir:
         self.suff_gal_list = ['null', 'b1', 'fnl']
         self.suff_vel_list = ['null', 'bv', 'bfg'] if self.sim_surr_fg else ['null', 'bv']
         self.p = p
-        self.f = self.cosmo.frsd(z=params['zeff'])
+        if f is not None:
+            print(f'We use {f=} as growth rate!')
+            self.f = f
+        else:
+            self.f = self.cosmo.frsd(z=params['zeff'])
 
         self.pk_surr = pk_surr
         self.nsurr = self.pk_surr[0].shape[0]

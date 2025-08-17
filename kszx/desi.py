@@ -39,10 +39,10 @@ def read_galaxies(survey, dr, download=False):
 
     Returns a :class:`kszx.Catalog` object, with the following columns::
      
-      ra_deg, dec_deg, z,    # sky location, redshift
-      weight                 # use this one!
-      wfkp                   # FKP weight
-      wcp, wzf, wsys,        # systematic weights (don't use these!)
+      ra_deg, dec_deg, z,                    # sky location, redshift
+      weight                                 # use this one!
+      wfkp                                   # FKP weight
+      wcp, wzf, wsys, frac_tlobs_tiles       # systematic weights (don't use these!)
 
     Example usage::
 
@@ -173,6 +173,7 @@ def read_fits_catalog(filename, name=None):
         catalog.add_column('wcp', f[1].read('WEIGHT_COMP'))   
         catalog.add_column('wzf', f[1].read('WEIGHT_ZFAIL'))
         catalog.add_column('wsys', f[1].read('WEIGHT_SYS'))
+        catalog.add_column('frac_tlobs_tiles', f[1].read('FRAC_TLOBS_TILES'))
 
     catalog._announce_file_read()
     return catalog

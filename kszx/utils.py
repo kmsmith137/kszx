@@ -7,6 +7,8 @@ import scipy.integrate
 import scipy.interpolate
 import multiprocessing
 
+from . import cpp_kernels
+
 
 ####################################################################################################
 
@@ -41,8 +43,9 @@ def set_nthreads(nthreads, reseed_numpy_rng=False):
     global _curr_nthreads
     _curr_nthreads = nthreads
 
-    # FIXME more code needed here, to propagate new 'nthreads' to all libraries (e.g. blas).
-    # Here's a library that looks helpful: https://github.com/joblib/threadpoolctl
+    cpp_kernels.omp_set_num_threads(nthreads)
+    
+    # FIXME more code needed here, to propagate new 'nthreads' to all libraries (e.g. blas, numba).
     
     if reseed_numpy_rng:
         # I think this is the best way to reseed numpy's global RNG.
@@ -252,6 +255,14 @@ def asarray(x, caller, arg, dtype=None, allow_none=False):
     raise RuntimeError(f"{caller}: couldn't convert {arg} to array{s} (value={x})")
     
 
+def one_hot(shape, indices, dtype=float, value=1):
+    """Returns 'one-hot' array (all entries are zero except one)."""
+    
+    ret = np.zeros(shape, dtype=dtype)
+    ret[indices] = value
+    return ret
+
+    
 def scattered_add(lhs, ix, rhs, normalize_sum = None):
     """Returns sum of RHS values (before applying 'normalize_sum').
     FIXME: Is there a numpy function that does this? If not, write a C++ kernel.
@@ -498,11 +509,15 @@ def boxcar_sum(a, m, normalize=False):
 
 
 def subtract_binned_means(data, x, nbins):
-    """Averages a 1-d 'data' array in x-bins, and returns a copy of 'data' with binned means subtracted."""
+    """Averages a 1-d 'data' array in x-bins, and returns a copy of 'data' with binned means subtracted.
+    If nbins==0, then returns a copy of 'data'."""
 
-    assert nbins >= 1
+    assert nbins >= 0
     assert data.shape == x.shape
 
+    if nbins == 0:
+        return np.copy(data)
+        
     # Compute bin edges
     bins = np.linspace(np.min(x), np.max(x), nbins + 1)
     
@@ -645,3 +660,13 @@ def std_notation(value, sigfigs, positive_sign=False):
     if is_neg and all(d == '0' for d in sig_digits): is_neg = False
 
     return ('-' if is_neg else '+' if positive_sign else '') + _place_dot(sig_digits, power)
+
+
+def flatten_cholesky(L):
+    return L[np.tril_indices_from(L)]
+
+def unflatten_cholesky(vec, dim):
+    L = np.zeros((dim, dim))
+    tril_indices = np.tril_indices(dim)
+    L[tril_indices] = vec
+    return L

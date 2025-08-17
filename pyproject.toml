@@ -1,6 +1,6 @@
 [project]
 name = "kszx"
-version = "0.0.12"
+version = "0.0.14"
 requires-python = ">= 3.11"
 dependencies = [ 'scipy', 'matplotlib', 'h5py', 'wget', 'astropy', 'camb', 'healpy', 'fitsio', 'pixell', 'numba' ]
 

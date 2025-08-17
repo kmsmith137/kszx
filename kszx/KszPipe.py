@@ -173,7 +173,7 @@ class KszPipe:
         print('KszPipe.surrogate_factory initialized')
         return sf
     
-    def get_pk_data(self, run=False, force=False):
+    def get_pk_data(self, run=False, force=False, save_fourier_maps=False):
         r"""Returns the computed pk, and saves it in ``pipeline_outdir/pk_data.npy``.
 
         For spin_gal = [0], spin_vr = [0, 1] and cmb_fields = ['90', '150']. The returned array contains auto and cross power spectra of the following fields:
@@ -221,9 +221,18 @@ class KszPipe:
                 w += [np.sum(vweights) / self.sum_rcat_vr_weights]
                 idx += [i + 1]
 
+        # save fourier maps to perform field level inference later on if needed.
+        if save_fourier_maps:
+            for i, kbin_edges in enumerate(self.kbin_edges):
+                # rebin the fourier space maps:
+                to_save = [core.kbin_average(self.box, mp, kbin_edges) for mp in fourier_space_maps]
+                io_utils.write_npy(f'{self.output_dir}/fourier_maps_{i}.npy', to_save)
+
         # Rescale window function (by roughly a factor Ngal/Nrand in each footprint).
         w = np.array(w)
         wf = self.window_function[idx,:][:,idx] * w[:, None] * w[None, :]
+
+        print('AJOUTER ICI AUSSI DANS SURROGATE LE TERM EN 2l+1 pour p_GV !!!!! (ca ne change rien car tout est compaitble entre data / sirrpgate !!)')
 
         pks = []
         for i, kbin_edges in enumerate(self.kbin_edges):
@@ -456,7 +465,7 @@ class KszPipe:
 ####################################################################################################
 
 class KszPipeOutdir:
-    def __init__(self, dirname, nsurr=None, p=1.0, binning={'gg':0, 'gv':0, 'vv':0}):
+    def __init__(self, dirname, nsurr=None, p=1.0, f=None, binning={'gg':0, 'gv':0, 'vv':0}):
         r"""A helper class for loading and processing output files from ``class KszPipe``.
 
         Note: for MCMCs and parameter fits, there is a separate class :class:`~kszx.PgvLikelihood`.
@@ -480,8 +489,8 @@ class KszPipeOutdir:
         filename = f'{dirname}/params.yml'
         print(f'Reading {filename}')
         
-        with open(filename, 'r') as f:
-            params = yaml.safe_load(f)
+        with open(filename, 'r') as ff:
+            params = yaml.safe_load(ff)
 
         kmin, kmax, kstep = params['kmin'], params['kmax'], params['kstep']
         kbin_edges = [np.arange(kmin[i], kmax[i], kstep[i]) for i in range(len(kmin))]
@@ -530,7 +539,11 @@ class KszPipeOutdir:
         self.suff_gal_list = ['null', 'b1', 'fnl']
         self.suff_vel_list = ['null', 'bv', 'bfg'] if self.sim_surr_fg else ['null', 'bv']
         self.p = p
-        self.f = self.cosmo.frsd(z=params['zeff'])
+        if f is not None:
+            print(f'We use {f=} as growth rate!')
+            self.f = f
+        else:
+            self.f = self.cosmo.frsd(z=params['zeff'])
 
         self.pk_surr = pk_surr
         self.nsurr = self.pk_surr[0].shape[0]
@@ -583,14 +596,28 @@ class KszPipeOutdir:
         elif style == 'gv':
             if ell == [0,0]:
                 #print('Here we neglect the RSD from bfg for now !!! NEED TO BE FIXED')
-                b1_rsd = b1 + 1/3*self.f
+                b1_rsd = b1 + 1/3 * self.f
             elif ell == [0,1]:
-                b1_rsd = b1 + 3/5*self.f
+                b1_rsd = b1 + 3/5 * self.f
             else:
                 print(f'b1_rsd is not ready for {ell=} and {style=} ... We probably need to change in detail the surrogate production!')
                 import sys
                 sys.exit(12)
         return b1_rsd
+
+    def D_g(self, k, sigmag):
+        """Returns the damping factor for galaxy overdensity. It will be applied after the convolution with the window function i.e. direclty to the surrogate."""
+        return 1 / (1 + (k * sigmag)**2 / 2)
+
+    def D_v(self, k, sigmav):
+        """Returns the damping factor for radial velocity. It will be applied after the convolution with the window function i.e direclty to the surrogate."""
+        return np.sinc(k*sigmav)
+
+    # def g_data(self, ell=0):
+    #     r"""Returns shape ``(nkbins,)`` array containing $P_{gg}^{data}(k)$ for galaxy overdensity with spin ``ell``."""
+    #     assert ell in self.spin_gal
+    #     idx = self.data_fields[f'gal-{ell}']
+    #     return self.pk_data[self.binning['gg']][idx, idx, :]
 
     def pgg_data(self, ell=[0, 0]):
         r"""Returns shape ``(nkbins,)`` array containing $P_{gg}^{data}(k)$."""
@@ -640,20 +667,21 @@ class KszPipeOutdir:
         t = field[0][0]*self.pk_data[self.binning['vv']][idx_vr_11,:] + field[0][1]*self.pk_data[self.binning['vv']][idx_vr_12,:]
         return field[1][0]*t[idx_vr_21] + field[1][1]*t[idx_vr_22]
 
-    def pgg_mean(self, b1=1, fnl=0, sn=1, ell=[0,0]):
+    def pgg_mean(self, b1=1, fnl=0, sn=1, sigmag=0, ell=[0,0]):
         r"""Returns shape ``(nkbins,)`` array, containing $\langle P_{gg}^{surr}(k) \rangle$."""
         assert ell[0] in self.spin_gal
         assert ell[1] in self.spin_gal
 
         params_gal = np.array([sn, self.b1_rsd(b1, ell, style='gg'), fnl*(b1 - self.p)])
+        params_gal = params_gal[:,None] * self.D_g(self.k['gg'], sigmag)[None, :]  # shape (3, nkbins)
         idx_gal_1 = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in self.suff_gal_list]
         idx_gal_2 = [self.surr_fields[f'gal-{ell[1]}-{suff}'] for suff in self.suff_gal_list]
 
         pgg = self.surr_mean[self.binning['gg']][idx_gal_1, :, :]       # shape (2, #fields, nkbins)
-        pgg = np.sum(params_gal[:, None, None] * pgg, axis=0)  # shape (nsurr,  #fields, nkbins)
-        return np.sum(params_gal[:, None] * pgg[idx_gal_2, :], axis=0)       # shape (nsurr, nkbins)
+        pgg = np.sum(params_gal[:, None, :] * pgg, axis=0)  # shape (nsurr,  #fields, nkbins)
+        return np.sum(params_gal[:, :] * pgg[idx_gal_2, :], axis=0)     # shape (nsurr, nkbins)
 
-    def pgv_mean(self, b1=1, fnl=0, sn=1, bv=1, bfg=0, freq=['90','150'], field=[1,0], ell=[0, 1]):
+    def pgv_mean(self, b1=1, fnl=0, sn=1, bv=1, snv=1, bfg=0, sigmag=0, sigmav=0, freq=['90','150'], field=[1,0], ell=[0, 1]):
         r"""Returns shape ``(nkbins,)`` array containing $\langle P_{gv}^{surr}(k) \rangle$.
 
         The ``field`` argument is a length-2 vector, selecting a linear combination
@@ -669,20 +697,22 @@ class KszPipeOutdir:
         assert ell[1] in self.spin_vr
 
         params_gal = np.array([sn, self.b1_rsd(b1, ell, style='gv'), fnl*(b1 - self.p)])
+        params_gal = params_gal[:,None] * self.D_g(self.k['gv'], sigmag)[None, :]  # shape (3, nkbins)
         idx_gal = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in self.suff_gal_list]
 
-        params_vel = np.array([1, bv, bfg]) if self.sim_surr_fg else np.array([1, bv])
+        params_vel = np.array([snv, bv, bfg]) if self.sim_surr_fg else np.array([snv, bv])
+        params_vel = params_vel[:, None] * self.D_v(self.k['gv'], sigmav)[None, :]  # shape (3, nkbins)
         idx_vr_1 = [self.surr_fields[f'{freq[0]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_2 = [self.surr_fields[f'{freq[1]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
 
         pgv = self.surr_mean[self.binning['gv']][idx_gal,:,:] # shape (2, #fields, nkbins)
         # this is the g term:
-        pgv = np.sum(params_gal[:, None, None] * pgv, axis=0) # shape (#fields, nkbins)
+        pgv = np.sum(params_gal[:, None, :] * pgv, axis=0) # shape (#fields, nkbins)
         # combine or not the different frequency fields:
         pgv = field[0] * pgv[idx_vr_1,:] + field[1] * pgv[idx_vr_2,:]      # shape (2 or 3, nkbins)
-        return np.sum(params_vel[:, None] * pgv, axis=0)   # shape (nkbins)
+        return np.sum(params_vel[:, :] * pgv, axis=0) # shape (nkbins)
 
-    def pvv_mean(self, bv=1, bfg=0, freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]], ell=[1,1]):
+    def pvv_mean(self, bv=1, snv=1, bfg=0, sigmav=0, freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]], ell=[1,1]):
         r"""Returns shape ``(nkbins,)`` array containing $\langle P_{vv}^{data}(k) \rangle$.
 
         The ``field`` argument is a length-2 vector, selecting a linear combination
@@ -696,18 +726,20 @@ class KszPipeOutdir:
         assert ell[0] in self.spin_vr
         assert ell[1] in self.spin_vr
 
-        params_vel = np.array([1, bv, bfg]) if self.sim_surr_fg else np.array([1, bv])
+        params_vel = np.array([snv, bv, bfg]) if self.sim_surr_fg else np.array([snv, bv])
+        params_vel = params_vel[:, None] * self.D_v(self.k['vv'], sigmav)[None, :]  # shape (3, nkbins)
+
         idx_vr_11 = [self.surr_fields[f'{freq[0][0]}-{ell[0]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_12 = [self.surr_fields[f'{freq[0][1]}-{ell[0]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_21 = [self.surr_fields[f'{freq[1][0]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_22 = [self.surr_fields[f'{freq[1][1]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
 
         pvv = field[0][0] * self.surr_mean[self.binning['vv']][idx_vr_11,:,:] + field[0][1] * self.surr_mean[self.binning['vv']][idx_vr_12,:,:] # shape (#params_vel, #fields, nkbins)
-        pvv = np.sum(params_vel[:, None, None] * pvv, axis=0) # shape (#fields, nkbins)
+        pvv = np.sum(params_vel[:, None, :] * pvv, axis=0) # shape (#fields, nkbins)
         pvv = field[1][0] * pvv[idx_vr_21,:] + field[1][1] * pvv[idx_vr_22,:]      # shape (#params_vel, nkbins)
-        return np.sum(params_vel[:, None] * pvv, axis=0)   # shape (nkbins)
+        return np.sum(params_vel[:, :] * pvv, axis=0) * self.D_v(self.k['vv'], sigmav)**2  # shape (nkbins)
 
-    def pggxpgg_cov(self, b11=1, fnl1=0, sn1=1, b12=1, fnl2=0, sn2=1,
+    def pggxpgg_cov(self, b11=1, fnl1=0, sn1=1, sigmag1=0, b12=1, fnl2=0, sn2=1, sigmag2=0,
                     ell1=[0, 0], ell2=[0, 0]):
         r"""Returns shape ``(nkbins, nkbins)`` covariance matrix of $P_{gg}^{surr}(k) x P_{gg}^{surr}(k)$."""
         idx_gal_11 = [self.surr_fields[f'gal-{ell1[0]}-{suff}'] for suff in self.suff_gal_list]
@@ -717,20 +749,27 @@ class KszPipeOutdir:
 
         coeffs1 = np.array([sn1, self.b1_rsd(b11, ell1, style='gg'), fnl1*(b11 - self.p)])
         coeffs1 = np.ravel(coeffs1[:,None]*coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_11)*len(idx_gal_12), )
+        coeffs1 = coeffs1[:,None] * self.D_g(self.k['gg'], sigmag1)[None,:]**2
+
         coeffs2 = np.array([1, self.b1_rsd(b12, ell2, style='gg'), fnl2*(b12 - self.p)])
         coeffs2 = np.ravel(coeffs2[:,None]*coeffs2[None,:])
+        coeffs2 = coeffs2[:,None] * self.D_g(self.k['gg'], sigmag2)[None,:]**2
+
         # array with all the coefficiens !
-        coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:]) # shape (len(idx_gal_21)*len(idx_gal_22)**2, )
+        # shape (len(idx_gal_21)*len(idx_gal_22)**2, nkbins, nkbins)
+        coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
+
         # keep only the indices that are needed for the covariance matrix:
-        idx1 = np.array([i*self.nsurr_fields + j for i in idx_gal_11 for j in idx_gal_12])  # shape (len(idx_gal_11)*len(idx_gal_12), )
+        # shape (len(idx_gal_11)*len(idx_gal_12), )
+        idx1 = np.array([i*self.nsurr_fields + j for i in idx_gal_11 for j in idx_gal_12])  
         idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal_21 for jj in idx_gal_22]) 
 
-        surr_cov = self.surr_cov[f"{self.binning['gg']}-{self.binning['gg']}"] # select the covariance for the right binning
-        cov = coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gg']], self.nkbins[self.binning['gg']])  
+        surr_cov = self.surr_cov[f"{self.binning['gg']}-{self.binning['gg']}"]  # select the covariance for the right binning
+        cov = coeff_cov * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gg']], self.nkbins[self.binning['gg']])  
 
         return np.sum(cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pgvxpgv_cov(self, b11=1, fnl1=0, sn1=1, bv1=1, bfg1=0, b12=1, fnl2=0, sn2=1, bv2=1, bfg2=0,  
+    def pgvxpgv_cov(self, b11=1, fnl1=0, sn1=1, bv1=1, snv1=1, bfg1=0, b12=1, sigmag1=0, sigmav1=0, fnl2=0, sn2=1, bv2=1, snv2=1, bfg2=0, sigmag2=0, sigmav2=0,
                     freq1=['90','150'], field1=[1,0], ell1=[0, 1],
                     freq2=['90','150'], field2=[1,0], ell2=[0, 1]):
         r"""Returns shape ``(nkbins, nkbins)`` covariance matrix of $P_{gv}^{surr}(k) x P_{gv}^{surr}(k)$.
@@ -751,9 +790,14 @@ class KszPipeOutdir:
         idx_vr2_1 = [self.surr_fields[f'{freq2[0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr2_2 = [self.surr_fields[f'{freq2[1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]       
 
-        coeffs1 = np.ravel(np.array([sn1, self.b1_rsd(b11, ell1, style='gv'), fnl1*(b11 - self.p)])[:,None] * (np.array([1, bv1, bfg1]) if self.sim_surr_fg else np.array([1, bv1]))[None,:])
-        coeffs2 = np.ravel(np.array([sn2, self.b1_rsd(b12, ell2, style='gv'), fnl2*(b12 - self.p)])[:,None] * (np.array([1, bv2, bfg2]) if self.sim_surr_fg else np.array([1, bv2]))[None,:])
-        coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
+        coeffs1 = np.ravel(np.array([sn1, self.b1_rsd(b11, ell1, style='gv'), fnl1*(b11 - self.p)])[:,None] * (np.array([snv1, bv1, bfg1]) if self.sim_surr_fg else np.array([snv2, bv1]))[None,:])
+        coeffs1 = coeffs1[:,None] * self.D_g(self.k['gv'], sigmag1)[None,:] * self.D_v(self.k['gv'], sigmav1)[None,:]
+
+        coeffs2 = np.ravel(np.array([sn2, self.b1_rsd(b12, ell2, style='gv'), fnl2*(b12 - self.p)])[:,None] * (np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2]))[None,:])
+        coeffs2 = coeffs2[:,None] * self.D_g(self.k['gv'], sigmag2)[None,:] * self.D_v(self.k['gv'], sigmav2)[None,:]
+
+        # shape (..., nkbins, nkbins)
+        coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
 
         cov = []
         # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields=[1,0]) 
@@ -765,13 +809,13 @@ class KszPipeOutdir:
                     idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal1 for jj in idx_vr1])  # shape (len(idx_gal_1)*len(idx_vr1), ) 
                     idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal2 for jj in idx_vr2])  # shape (len(idx_gal_2)*len(idx_vr2), )
                     surr_cov = self.surr_cov[f"{self.binning['gv']}-{self.binning['gv']}"] # select the covariance for the right binning
-                    cov_tmp = np.sum(coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gv']], self.nkbins[self.binning['gv']]), axis=0)  # shape (nkbins, nkbins)
+                    cov_tmp = np.sum(coeff_cov * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gv']], self.nkbins[self.binning['gv']]), axis=0)  # shape (nkbins, nkbins)
                 cov += [cov_tmp]
 
         field = np.ravel(field1[:, None] * field2[None, :])
         return np.sum(field[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pvvxpvv_cov(self, bv1=1, bfg1=0, bv2=1, bfg2=0, 
+    def pvvxpvv_cov(self, bv1=1, snv1=1, bfg1=0, sigmav1=0, bv2=1, snv2=1, bfg2=0, sigmav2=0,
                     freq1=[['90','150'], ['90','150']], field1=[[1,0], [1,0]], ell1=[1,1], 
                     freq2=[['90','150'], ['90','150']], field2=[[1,0], [1,0]], ell2=[1,1]):
         r"""Returns shape ``(nkbins, nkbins)`` covariance matrix of $P_{vv}^{surr}(k)$."""
@@ -786,11 +830,16 @@ class KszPipeOutdir:
         idx_vr2_2_1 = [self.surr_fields[f'{freq2[1][0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr2_2_2 = [self.surr_fields[f'{freq2[1][1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]       
 
-        coeffs1 = np.array([1, bv1, bfg1]) if self.sim_surr_fg else np.array([1, bv1])
+        coeffs1 = np.array([snv1, bv1, bfg1]) if self.sim_surr_fg else np.array([snv1, bv1])
         coeffs1 = np.ravel(coeffs1[:,None] * coeffs1[None,:])
-        coeffs2 = np.array([1, bv2, bfg2]) if self.sim_surr_fg else np.array([1, bv2])
+        coeffs1 = coeffs1[:,None] * self.D_v(self.k['vv'], sigmav1)[None,:]**2
+
+        coeffs2 = np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2])
         coeffs2 = coeffs2 = np.ravel(coeffs2[:,None]*coeffs2[None,:])
-        coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
+        coeffs2 = coeffs2[:,None] * self.D_v(self.k['vv'], sigmav2)[None,:]**2
+
+        # shape (..., nkbins, nkbins)
+        coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
 
         cov = []  # it will be a 16 x nkbins x nkbins array to cover any possible combination of fields1 / fields2.
         # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields=[1,0]) 
@@ -804,13 +853,13 @@ class KszPipeOutdir:
                             idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr1_1 for jj in idx_vr2_1])  # shape (len(idx_gal_1)*len(idx_vr1), ) 
                             idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr1_2 for jj in idx_vr2_2])  # shape (len(idx_gal_2)*len(idx_vr2), )
                             surr_cov = self.surr_cov[f"{self.binning['vv']}-{self.binning['vv']}"] # select the covariance for the right binning
-                            cov_tmp = np.sum(coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['vv']], self.nkbins[self.binning['vv']]), axis=0)  # shape (nkbins, nkbins)
+                            cov_tmp = np.sum(coeff_cov * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['vv']], self.nkbins[self.binning['vv']]), axis=0)  # shape (nkbins, nkbins)
                         cov += [cov_tmp]
 
         field = np.ravel(np.ravel(np.array(field1[0])[:, None] * np.array(field1[1])[None, :])[:, None] * np.ravel(np.array(field2[0])[:, None] * np.array(field2[1])[None, :])[None, :])
         return np.sum(field[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pggxpgv_cov(self, b11=1, fnl1=0, sn1=1, b12=1, fnl2=0, sn2=1, bv2=1, bfg2=0, 
+    def pggxpgv_cov(self, b11=1, fnl1=0, sn1=1, sigmag1=0, b12=1, fnl2=0, sn2=1, bv2=1, snv2=1, bfg2=0, sigmag2=0, sigmav2=0,
                     ell1=[0, 0], 
                     freq2=['90','150'], field2=[1,0], ell2=[0, 1]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gg}^{surr}(k) \times P_{gv}^{surr}(k)$."""
@@ -826,9 +875,14 @@ class KszPipeOutdir:
 
         coeffs1 = np.array([sn1, self.b1_rsd(b11, ell1, style='gg'), fnl1*(b11 - self.p)])
         coeffs1 = np.ravel(coeffs1[:,None] * coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_11)*len(idx_gal_12), )
-        coeffs2 = np.ravel(np.array([sn2, self.b1_rsd(b12, ell2, style='gv'), fnl2*(b12 - self.p)])[:,None] * (np.array([1, bv2, bfg2]) if self.sim_surr_fg else np.array([1, bv2]))[None,:])
-        coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
-
+        coeffs1 = coeffs1[:,None] * self.D_g(self.k['gg'], sigmag1)[None,:]**2
+        
+        coeffs2 = np.ravel(np.array([sn2, self.b1_rsd(b12, ell2, style='gv'), fnl2*(b12 - self.p)])[:,None] * (np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2]))[None,:])
+        coeffs2 = coeffs2[:,None] * self.D_g(self.k['gv'], sigmag2)[None,:] * self.D_v(self.k['gv'], sigmav2)[None,:]
+        
+        # shape (..., nkbins, nkbins)
+        coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
+        
         cov = []
         # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields=[1,0]) 
         for i, idx_vr in enumerate([idx_vr1_1, idx_vr1_2]):
@@ -838,19 +892,19 @@ class KszPipeOutdir:
                 idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal1 for jj in idx_gal2]) 
                 idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal3 for jj in idx_vr]) 
                 surr_cov = self.surr_cov[f"{self.binning['gg']}-{self.binning['gv']}"] # select the covariance for the right binning
-                cov_tmp = np.sum(coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gg']], self.nkbins[self.binning['gv']]), axis=0)  # shape (nkbins, nkbins)
+                cov_tmp = np.sum(coeff_cov * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gg']], self.nkbins[self.binning['gv']]), axis=0)  # shape (nkbins, nkbins)
             cov += [cov_tmp]
 
         return np.sum(field2[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pgvxpgg_cov(self, b11=1, fnl1=0, bv1=1, bfg1=0, b12=1, fnl2=0, sn2=1,
+    def pgvxpgg_cov(self, b11=1, fnl1=0, bv1=1, sn1=1, snv1=1, bfg1=0, sigmag1=0, sigmav1=0, b12=1, fnl2=0, sn2=1, sigmag2=0,
                     freq1=['90','150'], field1=[1,0], ell1=[0, 0], 
                     ell2=[0, 1]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gv}^{surr}(k) \times P_{gg}^{surr}(k)$."""
         
-        return self.pggxpgv_cov(b11=b12, fnl1=fnl2, sn1=sn2, b12=b11, fnl2=fnl1, bv2=bv1, bfg2=bfg1, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1).T
+        return self.pggxpgv_cov(b11=b12, fnl1=fnl2, sn1=sn2, sigmag1=sigmag2, b12=b11, fnl2=fnl1, bv2=bv1, sn2=sn1, snv2=snv1, bfg2=bfg1, sigmag2=sigmag1, sigmav2=sigmav1, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1).T
 
-    def pgvxpvv_cov(self, b11=1, fnl1=0, sn1=1, bv1=1, bfg1=0, bv2=1, bfg2=0,
+    def pgvxpvv_cov(self, b11=1, fnl1=0, sn1=1, bv1=1, snv1=1, bfg1=0, sigmag1=0, sigmav1=0, bv2=1, snv2=1, bfg2=0, sigmav2=0,
                     freq1=['90','150'], field1=[1,0], ell1=[0,1], 
                     freq2=[['90','150'], ['90','150']], field2=[[1,0], [1,0]], ell2=[1,1]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gv}^{surr}(k) \times P_{vv}^{surr}(k)$."""
@@ -863,10 +917,15 @@ class KszPipeOutdir:
         idx_vr2_2_1 = [self.surr_fields[f'{freq2[1][0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr2_2_2 = [self.surr_fields[f'{freq2[1][1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]       
 
-        coeffs1 = np.ravel(np.array([sn1, self.b1_rsd(b11, ell1, style='gv'), fnl1*(b11 - self.p)])[:,None] * (np.array([1, bv1, bfg1]) if self.sim_surr_fg else np.array([1, bv1]))[None,:])
-        coeffs2 = np.array([1, bv2, bfg2]) if self.sim_surr_fg else np.array([1, bv2])
+        coeffs1 = np.ravel(np.array([sn1, self.b1_rsd(b11, ell1, style='gv'), fnl1*(b11 - self.p)])[:,None] * (np.array([snv1, bv1, bfg1]) if self.sim_surr_fg else np.array([snv1, bv1]))[None,:])
+        coeffs1 = coeffs1[:,None] * self.D_g(self.k['gv'], sigmag1)[None,:] * self.D_v(self.k['gv'], sigmav1)[None,:]
+
+        coeffs2 = np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2])
         coeffs2 = np.ravel(coeffs2[:,None] * coeffs2[None,:])
-        coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
+        coeffs2 = coeffs2[:,None] * self.D_v(self.k['vv'], sigmav2)[None,:]**2
+
+        # shape (..., nkbins, nkbins)
+        coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
 
         cov = []
         # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields=[1,0]) 
@@ -879,20 +938,20 @@ class KszPipeOutdir:
                         idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal1 for jj in idx_vr1]) 
                         idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr2_1 for jj in idx_vr2_2]) 
                         surr_cov = self.surr_cov[f"{self.binning['gv']}-{self.binning['vv']}"] # select the covariance for the right binning
-                        cov_tmp = np.sum(coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gv']], self.nkbins[self.binning['vv']]), axis=0)  # shape (nkbins, nkbins)
+                        cov_tmp = np.sum(coeff_cov * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gv']], self.nkbins[self.binning['vv']]), axis=0)  # shape (nkbins, nkbins)
                     cov += [cov_tmp]
 
         field = np.ravel(np.array(field1)[:, None] * np.ravel(np.array(field2[0])[:, None] * np.array(field2[1])[None, :])[None, :])
         return np.sum(field[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pvvxpgv_cov(self, bv1=1, bfg1=0, b12=1, fnl2=0, sn2=1, bv2=1, bfg2=0, 
+    def pvvxpgv_cov(self, bv1=1, snv1=1, bfg1=0, sigmav1=0, b12=1, fnl2=0, sn2=1, bv2=1, snv2=1, bfg2=0, sigmag2=0, sigmav2=0,
                     freq1=[['90','150'], ['90','150']], field1=[[1,0], [1,0]], ell1=[1,1],
                     freq2=['90','150'], field2=[1,0], ell2=[0,1]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{vv}^{surr}(k) \times P_{gv}^{surr}(k)$."""
 
-        return self.pgvxpvv_cov(b11=b12, fnl1=fnl2, sn1=sn2, bv1=bv2, bfg1=bfg2, bv2=bv1, bfg2=bfg1, freq1=freq2, field1=field2, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1).T
+        return self.pgvxpvv_cov(b11=b12, fnl1=fnl2, sn1=sn2, bv1=bv2, snv1=snv2, bfg1=bfg2, sigmag1=sigmag2, sigmav1=sigmav2, bv2=bv1, snv2=snv1, bfg2=bfg1, sigmav2=sigmav1, freq1=freq2, field1=field2, ell1=ell2, freq2=freq1, field2=field1, ell2=ell1).T
 
-    def pggxpvv_cov(self, b11=1, fnl1=0, sn1=1, bv2=1, bfg2=0, 
+    def pggxpvv_cov(self, b11=1, fnl1=0, sn1=1, sigmag1=0, bv2=1, snv2=1, bfg2=0, sigmav2=0,
                     ell1=[0,0], 
                     ell2=[1,1], freq2=[['90','150'], ['90','150']], field2=[[1,0], [1,0]]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{gg}^{surr}(k) \times P_{vv}^{surr}(k)$."""
@@ -906,8 +965,13 @@ class KszPipeOutdir:
 
         coeffs1 = np.array([sn1, self.b1_rsd(b11, ell1, style='gg'), fnl1*(b11 - self.p)])
         coeffs1 = np.ravel(coeffs1[:,None] * coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_1)*len(idx_gal_1), )
-        coeffs2 = np.array([1, bv2, bfg2, bv2, bv2**2, bv2*bfg2, bfg2, bfg2*bv2, bfg2**2]) if self.sim_surr_fg else np.array([1, bv2, bv2, bv2**2])
-        coeff_cov = np.ravel(coeffs1[:,None] * coeffs2[None,:])  # shape (len(idx_gal)*len(idx_vr), )
+        coeffs1 = coeffs1[:,None] * self.D_g(self.k['gg'], sigmag1)[None,:]**2
+
+        coeffs2 = np.array([snv2, bv2, bfg2, bv2, bv2**2, bv2*bfg2, bfg2, bfg2*bv2, bfg2**2]) if self.sim_surr_fg else np.array([snv2, bv2, bv2, bv2**2])
+        coeffs2 = coeffs2[:,None] * self.D_v(self.k['vv'], sigmav2)[None,:]**2
+
+        # shape (..., nkbins, nkbins)
+        coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
 
         cov = []
         # for speed up reason, we do not want to compute covariance matrices that are not needed (for instance if fields2=[1,0]) 
@@ -919,75 +983,81 @@ class KszPipeOutdir:
                     idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_gal1 for jj in idx_gal2]) 
                     idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr1 for jj in idx_vr2]) 
                     surr_cov = self.surr_cov[f"{self.binning['gg']}-{self.binning['vv']}"] # select the covariance for the right binning
-                    cov_tmp = np.sum(coeff_cov[:, None, None] * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gg']], self.nkbins[self.binning['vv']]), axis=0)  # shape (nkbins, nkbins)
+                    cov_tmp = np.sum(coeff_cov * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['gg']], self.nkbins[self.binning['vv']]), axis=0)  # shape (nkbins, nkbins)
                 cov += [cov_tmp]
 
         field = np.ravel(np.array(field2[0])[:, None] * np.array(field2[1])[None, :])
         return np.sum(field[:, None, None] * cov, axis=0)  # shape (nkbins, nkbins)
 
-    def pvvxpgg_cov(self, b12=1, fnl2=0, sn2=1, bv1=1, bfg1=0, 
+    def pvvxpgg_cov(self, bv1=1, snv1=1, bfg1=0, sigmav1=0, b12=1, fnl2=0, sn2=1, sigmag2=0, 
                     ell1=[1,1], freq1=[['90','150'], ['90','150']], field1=[[1,0], [1,0]],
                     ell2=[0,0]):
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{vv}^{surr}(k) \times P_{gg}^{surr}(k)$."""
-        return self.pggxpvv_cov(b11=b12, fnl1=fnl2, sn1=sn2, bv2=bv1, bfg2=bfg1, ell1=ell2, ell2=ell1, freq2=freq1, field2=field1).T
+        return self.pggxpvv_cov(b11=b12, fnl1=fnl2, sn1=sn2, sigmag1=sigmag2, bv2=bv1, snv2=snv1, bfg2=bfg1, sigmav2=sigmav1, ell1=ell2, ell2=ell1, freq2=freq1, field2=field1).T
 
     def _pgg_rms(self, b1=1, fnl=0, sn=1, ell=[0, 0]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array, containing sqrt(Var($P_{gg}^{surr}(k)$))."""
         assert self.nsurr >= 2
         return np.sqrt(np.var(self._pgg_surr(b1=b1, fnl=fnl, sn=sn, ell=ell), axis=0))
 
-    def _pgv_rms(self, b1=1, fnl=0, sn=1, bv=1, bfg=0, freq=['90','150'], field=[1, 0], ell=[0, 1]):
+    def _pgv_rms(self, b1=1, fnl=0, sn=1, bv=1, snv=1, bfg=0, freq=['90','150'], field=[1, 0], ell=[0, 1]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array containing sqrt(Var($P_{gv}^{surr}(k)$))."""
         assert self.nsurr >= 2
-        return np.sqrt(np.var(self._pgv_surr(b1=b1, fnl=fnl, sn=sn, bv=bv, bfg=bfg, freq=freq, field=field, ell=ell), axis=0))
+        return np.sqrt(np.var(self._pgv_surr(b1=b1, fnl=fnl, sn=sn, bv=bv, snv=snv, bfg=bfg, freq=freq, field=field, ell=ell), axis=0))
 
-    def _pvv_rms(self, bv=1, bfg=0, freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]], ell=[1,1]):
+    def _pvv_rms(self, bv=1, snv=1, bfg=0, freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]], ell=[1,1]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array containing sqrt(var($P_{vv}^{data}(k)$))"""
         assert self.nsurr >= 2
-        return np.sqrt(np.var(self._pvv_surr(bv=bv, bfg=bfg, freq=freq, field=field, ell=ell), axis=0))
+        return np.sqrt(np.var(self._pvv_surr(bv=bv, snv=snv, bfg=bfg, freq=freq, field=field, ell=ell), axis=0))
 
-    def _pgg_surr(self, b1=1, fnl=0, sn=1, ell=[0, 0]):
+    def _pgg_surr(self, b1=1, fnl=0, sn=1, sigmag=0, ell=[0, 0]):
         """For plotting purpose, returns shape (nsurr, nkbins) array, containing P_{gg} for each surrogate"""
         params_gal = np.array([sn, self.b1_rsd(b1, ell, style='gg'), fnl*(b1 - self.p)])
+        params_gal = params_gal[:,None] * self.D_g(self.k['gg'], sigmag)[None, :]  # shape (3, nkbins)
+
         idx_gal_1 = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in self.suff_gal_list]
         idx_gal_2 = [self.surr_fields[f'gal-{ell[1]}-{suff}'] for suff in self.suff_gal_list]
 
         pgg =  self.pk_surr[self.binning['gg']][:, idx_gal_1, :, :]       # shape (nsurr, 2, #fields, nkbins)
-        pgg = np.sum(params_gal[None, :, None, None] * pgg, axis=1)  # shape (nsurr, #fields, nkbins)
-        return np.sum(params_gal[None, :, None] * pgg[:, idx_gal_2, :], axis=1)       # shape (nsurr, nkbins)
+        pgg = np.sum(params_gal[None, :, None, :] * pgg, axis=1)  # shape (nsurr, #fields, nkbins)
+        return np.sum(params_gal[None, :, :] * pgg[:, idx_gal_2, :], axis=1)      # shape (nsurr, nkbins)
 
-    def _pgv_surr(self, b1=1, fnl=0, sn=1, bv=1, bfg=0, freq=['90','150'], field=[1,0], ell=[0, 1]):
+    def _pgv_surr(self, b1=1, fnl=0, sn=1, bv=1, snv=1, bfg=0, sigmag=0, sigmav=0, freq=['90','150'], field=[1,0], ell=[0, 1]):
         """For plotting purpose, returns shape (nsurr, nkbins) array, containing P_{gv} for each surrogate"""
         field = self._check_field(field)
         assert ell[0] in self.spin_gal
         assert ell[1] in self.spin_vr
 
         params_gal = np.array([sn, self.b1_rsd(b1, ell, style='gv'), fnl*(b1 - self.p)])
+        params_gal = params_gal[:,None] * self.D_g(self.k['gv'], sigmag)[None, :]  # shape (3, nkbins)
         idx_gal = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in self.suff_gal_list]
 
-        params_vel = np.array([1, bv, bfg]) if self.sim_surr_fg else np.array([1, bv])
+        params_vel = np.array([snv, bv, bfg]) if self.sim_surr_fg else np.array([snv, bv])
+        params_vel = params_vel[:, None] * self.D_v(self.k['gv'], sigmav)[None, :]  # shape (3, nkbins)
         idx_vr_1 = [self.surr_fields[f'{freq[0]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_2 = [self.surr_fields[f'{freq[1]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
 
         pgv = self.pk_surr[self.binning['gv']][:, idx_gal,:,:] # shape (nsurr, 2, #fields, nkbins)
         # this is the g term:
-        pgv = np.sum(params_gal[None, :, None, None] * pgv, axis=1) # shape (nsurr, #fields, nkbins)
+        pgv = np.sum(params_gal[None, :, None, :] * pgv, axis=1) # shape (nsurr, #fields, nkbins)
         # combine or not the different frequency fields:
         pgv = field[0] * pgv[:, idx_vr_1,:] + field[1] * pgv[:, idx_vr_2,:]      # shape (nsurr, 2 or 3, nkbins)
-        return np.sum(params_vel[None, :, None] * pgv, axis=1)   # shape (nsurr, nkbins)
+        return np.sum(params_vel[None, :, :] * pgv, axis=1) # shape (nsurr, nkbins)
 
-    def _pvv_surr(self, bv=1, bfg=0, freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]], ell=[1,1]):
+    def _pvv_surr(self, bv=1, snv=1, bfg=0, sigmav=0, freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]], ell=[1,1]):
         """For plotting purpose, returns shape (nsurr, nkbins) array, containing P_{vv} for each surrogate"""
         assert ell[0] in self.spin_vr
         assert ell[1] in self.spin_vr
 
-        params_vel = np.array([1, bv, bfg]) if self.sim_surr_fg else np.array([1, bv])
+        params_vel = np.array([snv, bv, bfg]) if self.sim_surr_fg else np.array([snv, bv])
+        params_vel = params_vel[:, None] * self.D_v(self.k['vv'], sigmav)[None, :]  # shape (3, nkbins)
+
         idx_vr_11 = [self.surr_fields[f'{freq[0][0]}-{ell[0]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_12 = [self.surr_fields[f'{freq[0][1]}-{ell[0]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_21 = [self.surr_fields[f'{freq[1][0]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_22 = [self.surr_fields[f'{freq[1][1]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
 
         pvv = field[0][0] * self.pk_surr[self.binning['vv']][:,idx_vr_11,:,:] + field[0][1] * self.pk_surr[self.binning['vv']][:,idx_vr_12,:,:] # shape (nsurr, #params_vel, #fields, nkbins)
-        pvv = np.sum(params_vel[None, :, None, None] * pvv, axis=1) # shape (nsurr, #fields, nkbins)
+        pvv = np.sum(params_vel[None, :, None, :] * pvv, axis=1) # shape (nsurr, #fields, nkbins)
         pvv = field[1][0] * pvv[:, idx_vr_21,:] + field[1][1] * pvv[:, idx_vr_22,:]      # shape (nsurr, #params_vel, nkbins)
-        return np.sum(params_vel[None, :, None] * pvv, axis=1)   # shape (nsurr, nkbins)
+        return np.sum(params_vel[None, :, :] * pvv, axis=1)  # shape (nsurr, nkbins)

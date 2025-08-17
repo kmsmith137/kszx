@@ -1,7 +1,9 @@
+#include <omp.h>
 #include <sstream>
 #include <iostream>
 #include "cpp_kernels.hpp"
 #include "interpolation_args.hpp"
+
 
 using namespace std;
 
@@ -72,6 +74,7 @@ py::array_t<double> cic_interpolate_3d(py::array_t<const double> &grid, py::arra
     py::array_t<double> ret({args.npoints});
     double *rdata = ret.mutable_data();
 
+#pragma omp parallel for schedule(guided,32)
     for (long i = 0; i < args.npoints; i++) {
 	double x, y, z;
 	args.get_xyz(i, x, y, z);

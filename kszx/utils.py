@@ -665,8 +665,29 @@ def std_notation(value, sigfigs, positive_sign=False):
 def flatten_cholesky(L):
     return L[np.tril_indices_from(L)]
 
+
 def unflatten_cholesky(vec, dim):
     L = np.zeros((dim, dim))
     tril_indices = np.tril_indices(dim)
     L[tril_indices] = vec
     return L
+
+
+def cross_covariance(X: np.ndarray, Y: np.ndarray) -> np.ndarray:
+    """
+    Compute cross-covariance between two arrays X and Y.
+
+    Parameters
+    ----------
+    X : np.ndarray, shape (n_samples, n_features_X)
+    Y : np.ndarray, shape (n_samples, n_features_Y)
+
+    Returns
+    -------
+    np.ndarray, shape (n_features_X, n_features_Y)
+        Cross-covariance matrix.
+    """
+    if X.shape[0] != Y.shape[0]:
+        raise ValueError("X and Y must have the same number of samples (rows).")
+
+    return ((X - np.mean(X, axis=0)).T @ (Y - np.mean(Y, axis=0))) / (X.shape[0] - 1)

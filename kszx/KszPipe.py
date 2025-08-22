@@ -280,7 +280,7 @@ class KszPipe:
         rweights = getattr(self.rcat, 'weight_gal', np.ones(nrand))
         vweights = getattr(self.rcat, 'weight_vr', np.ones(nrand))
 
-        # The SurrogateFactory simulates LSS fields (delta, phi, vr, rsd0, rsd2) sampled at random catalog locations.
+        # The SurrogateFactory simulates LSS fields (delta, phi, vr, rsd) sampled at random catalog locations.
         self.surrogate_factory.simulate_surrogate()
         ngal = self.surrogate_factory.ngal
 
@@ -559,7 +559,6 @@ class KszPipeOutdir:
         self.nsurr_fields = nsurr_fields
 
         print('Computing surrogate covariance matrices ...')
-        print('CAN BE optimized here (store only needed cross-covariances / one non-diagonal term...)!')
         cov = {}
         to_compute = np.unique([val for val in self.binning.values()])
         for i in to_compute:
@@ -567,14 +566,12 @@ class KszPipeOutdir:
                 if j == i:
                     cov_tmp = np.cov(self.pk_surr[i].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[i]), rowvar=False)
                 else:
-                    # not optimal but do it only once.
-                    cov_tmp = np.cov(self.pk_surr[i].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[i]), self.pk_surr[j].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[j]), rowvar=False)
-                    #cov_tmp = cov_tmp[nsurr_fields*nsurr_fields*self.nkbins[i]:, :nsurr_fields*nsurr_fields*self.nkbins[i]]
-                    cov_tmp = cov_tmp[:nsurr_fields*nsurr_fields*self.nkbins[i], nsurr_fields*nsurr_fields*self.nkbins[i]:]
+                    # DO NOT USE np.cov(X,Y) since it will computes the covariance of the concatenated array --> super memory intensive...)
+                    cov_tmp = utils.cross_covariance(self.pk_surr[i].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[i]), self.pk_surr[j].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[j]))
 
-                #cov_tmp = cov_tmp.reshape((nsurr_fields*nsurr_fields, self.nkbins[j], nsurr_fields*nsurr_fields, self.nkbins[i]))
                 cov_tmp = cov_tmp.reshape((nsurr_fields*nsurr_fields, self.nkbins[i], nsurr_fields*nsurr_fields, self.nkbins[j]))
                 cov_tmp = cov_tmp.transpose(0, 2, 1, 3)         # reorder axes to have cov matrix in the last two indices for each field.
+                # CAn be otpimized here, we only need the upper / lower triangle part of this matrix...
                 cov[f'{i}-{j}'] = np.ascontiguousarray(cov_tmp)  # make contiguous
         self.surr_cov = cov
         print('KszPipeOutdir initialized.')
@@ -800,7 +797,7 @@ class KszPipeOutdir:
         rsd1 = rsd1.reshape(rsd1.shape[0]*rsd1.shape[1], rsd1.shape[2])
         coeffs1 = coeffs1[:,None] * rsd1 
 
-        coeffs2 = np.ravel(np.array([sn2, b12, fnl2*(b12 - self.p)])[:,None] * (np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2]))[None,:])
+        coeffs2 = np.ravel(np.array([sn2, b12, self.f, fnl2*(b12 - self.p)])[:,None] * (np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2]))[None,:])
         rsd21 = np.array([np.ones_like(self.k['gv']), self.D_g(self.k['gv'], sigmag2), self.D_g(self.k['gv'], sigmag2), self.D_g(self.k['gv'], sigmag2)])
         rsd22 = np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav2), np.ones_like(self.k['gv'])]) if self.sim_surr_fg else np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav2)])
         rsd2 = rsd21[:,None] * rsd22[None,:]

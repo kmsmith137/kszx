@@ -232,7 +232,7 @@ class KszPipe:
         w = np.array(w)
         wf = self.window_function[idx,:][:,idx] * w[:, None] * w[None, :]
 
-        print('AJOUTER ICI AUSSI DANS SURROGATE LE TERM EN 2l+1 pour p_GV !!!!! (ca ne change rien car tout est compaitble entre data / sirrpgate !!)')
+        print('WARNING It lacks here the term in (2l+1) for p_gv(ell=1) !!!!! (no problem because it is the same between data and surrogate !!)')
 
         pks = []
         for i, kbin_edges in enumerate(self.kbin_edges):
@@ -280,7 +280,7 @@ class KszPipe:
         rweights = getattr(self.rcat, 'weight_gal', np.ones(nrand))
         vweights = getattr(self.rcat, 'weight_vr', np.ones(nrand))
 
-        # The SurrogateFactory simulates LSS fields (delta, phi, vr) sampled at random catalog locations.
+        # The SurrogateFactory simulates LSS fields (delta, phi, vr, rsd0, rsd2) sampled at random catalog locations.
         self.surrogate_factory.simulate_surrogate()
         ngal = self.surrogate_factory.ngal
 
@@ -293,8 +293,9 @@ class KszPipe:
         # Each surrogate field is a sum (with coefficients) over the random catalog.
         # First we compute the coefficient arrays.
         # For more info, see the overleaf, or the sphinx docs: https://kszx.readthedocs.io/en/latest/kszpipe.html#kszpipe-details
-        Sg = (ngal/nrand) * rweights * eta
+        Sg_noise = (ngal/nrand) * rweights * eta
         dSg_db1 = (ngal/nrand) * rweights * self.surrogate_factory.delta
+        dSg_df = (ngal/nrand) * rweights * self.surrogate_factory.rsd
         dSg_dfnl = (ngal/nrand) * rweights * (2 * self.deltac)  * self.surrogate_factory.phi
         Sv_noise = {f'{freq}': vweights * self.surrogate_factory.M * self.rcat.get_column(f'tcmb_{freq}') for freq in self.cmb_fields}
         Sv_signal = {f'{freq}': (ngal/nrand) * vweights * self.rcat.get_column(f'bv_{freq}') * self.surrogate_factory.vr for freq in self.cmb_fields}
@@ -306,8 +307,9 @@ class KszPipe:
         # which satisfies "integral constraints" since the random z-distribution is inferred from the
         # galaxies. (In practice, the effect seems to be small.)
         if self.nzbins_gal > 0:
-            Sg = utils.subtract_binned_means(Sg, zobs, self.nzbins_gal)
+            Sg_noise = utils.subtract_binned_means(Sg_noise, zobs, self.nzbins_gal)
             dSg_db1 = utils.subtract_binned_means(dSg_db1, zobs, self.nzbins_gal)
+            dSg_df = utils.subtract_binned_means(dSg_df, zobs, self.nzbins_gal)
             dSg_dfnl = utils.subtract_binned_means(dSg_dfnl, zobs, self.nzbins_gal)
 
         # Mean subtraction for the surrogate fields Sv.
@@ -323,7 +325,7 @@ class KszPipe:
         # (Coefficient arrays) -> (Fourier-space fields).
         fourier_space_maps, idx = [], []
         for spin in self.spin_gal:
-            for term in [Sg, dSg_db1, dSg_dfnl]:
+            for term in [Sg_noise, dSg_db1, dSg_df, dSg_dfnl]:
                 fourier_space_maps += [core.grid_points(self.box, self.rcat_xyz_obs, term, kernel=self.kernel, fft=True, spin=spin, compensate=True)]
                 idx += [0]
         for spin in self.spin_vr:
@@ -390,8 +392,7 @@ class KszPipe:
         """
         
         # Copy yaml file from input to output dir.
-        if not os.path.exists(f'{self.output_dir}/params.yml'):
-            shutil.copyfile(f'{self.input_dir}/params.yml', f'{self.output_dir}/params.yml')
+        shutil.copyfile(f'{self.input_dir}/params.yml', f'{self.output_dir}/params.yml')
 
         # Add information into the output_dir/params.yml 
         with open(f'{self.output_dir}/params.yml', 'a') as f:
@@ -414,6 +415,8 @@ class KszPipe:
                 print(f"  gal-{spin}-null: {idx}  # surrogate galaxy field S_g with spin={spin}", file=f)
                 idx += 1
                 print(f"  gal-{spin}-b1: {idx}  # derivative (dS_g/db1) with spin={spin}", file=f)
+                idx += 1
+                print(f"  gal-{spin}-f: {idx}  # derivative (dS_g/df) with spin={spin}", file=f)
                 idx += 1
                 print(f"  gal-{spin}-fnl: {idx}  # derivative (dS_g/dfNL) with spin={spin}", file=f)
                 idx += 1
@@ -511,10 +514,11 @@ class KszPipeOutdir:
                     raise RuntimeError(f'Got {pk_s.shape=}, expected (nsurr,{len(surr_fields)},{len(surr_fields)},nkbins) where {nkbins[i]=}')
         else:
             pk_surr = []
+            print(f'Reading {nsurr} surrogate files from {dirname}/tmp/pk_surr_*_binning*.npy')
             for j in range(len(kbin_edges)):
                 pk_surr_tmp = []
                 for i in range(nsurr):
-                    pk_surrogate = io_utils.read_npy(f'{dirname}/tmp/pk_surr_{i}_binning{j}.npy')
+                    pk_surrogate = io_utils.read_npy(f'{dirname}/tmp/pk_surr_{i}_binning{j}.npy', verbose=False)
                     if pk_surrogate.shape != (len(surr_fields), len(surr_fields), nkbins[j]):
                         raise RuntimeError(f'Got {pk_surrogate.shape=}, expected ({len(surr_fields)},{len(surr_fields)},nkbins) where {nkbins[j]=}')
                     pk_surr_tmp += [pk_surrogate]
@@ -536,7 +540,7 @@ class KszPipeOutdir:
 
         self.surr_fields = surr_fields
         self.sim_surr_fg = params['simulate_surrogate_foregrounds']
-        self.suff_gal_list = ['null', 'b1', 'fnl']
+        self.suff_gal_list = ['null', 'b1', 'f', 'fnl']
         self.suff_vel_list = ['null', 'bv', 'bfg'] if self.sim_surr_fg else ['null', 'bv']
         self.p = p
         if f is not None:
@@ -554,6 +558,8 @@ class KszPipeOutdir:
         nsurr_fields = len(surr_fields)
         self.nsurr_fields = nsurr_fields
 
+        print('Computing surrogate covariance matrices ...')
+        print('CAN BE optimized here (store only needed cross-covariances / one non-diagonal term...)!')
         cov = {}
         to_compute = np.unique([val for val in self.binning.values()])
         for i in to_compute:
@@ -571,6 +577,7 @@ class KszPipeOutdir:
                 cov_tmp = cov_tmp.transpose(0, 2, 1, 3)         # reorder axes to have cov matrix in the last two indices for each field.
                 cov[f'{i}-{j}'] = np.ascontiguousarray(cov_tmp)  # make contiguous
         self.surr_cov = cov
+        print('KszPipeOutdir initialized.')
 
     @functools.cached_property
     def cosmo(self):
@@ -583,30 +590,8 @@ class KszPipeOutdir:
             raise RuntimeError(f"Expected 'field' argument to be a 1-d array of length 2, got {field.shape=}")
         return field
 
-    def b1_rsd(self, b1, ell, style='gg'):
-        if style == 'gg':
-            if ell == [0,0]:
-                b1_rsd = np.sqrt((b1**2 + 2/3*b1*self.f + 1/5*self.f**2))
-            elif ell == [0,2] or ell == [2,0]:
-                b1_rsd = np.sqrt((4/3*b1*self.f + 4/7*self.f**2)) 
-            else:
-                print(f'b1_rsd is not ready for {ell=} and {style=} ... We probably need to change in detail the surrogate production!')
-                import sys
-                sys.exit(12)
-        elif style == 'gv':
-            if ell == [0,0]:
-                #print('Here we neglect the RSD from bfg for now !!! NEED TO BE FIXED')
-                b1_rsd = b1 + 1/3 * self.f
-            elif ell == [0,1]:
-                b1_rsd = b1 + 3/5 * self.f
-            else:
-                print(f'b1_rsd is not ready for {ell=} and {style=} ... We probably need to change in detail the surrogate production!')
-                import sys
-                sys.exit(12)
-        return b1_rsd
-
     def D_g(self, k, sigmag):
-        """Returns the damping factor for galaxy overdensity. It will be applied after the convolution with the window function i.e. direclty to the surrogate."""
+        """Returns the damping factor for delta_g. It will be applied after the convolution with the window function i.e. direclty to the surrogate."""
         return 1 / (1 + (k * sigmag)**2 / 2)
 
     def D_v(self, k, sigmav):
@@ -672,8 +657,9 @@ class KszPipeOutdir:
         assert ell[0] in self.spin_gal
         assert ell[1] in self.spin_gal
 
-        params_gal = np.array([sn, self.b1_rsd(b1, ell, style='gg'), fnl*(b1 - self.p)])
-        params_gal = params_gal[:,None] * self.D_g(self.k['gg'], sigmag)[None, :]  # shape (3, nkbins)
+        params_gal = np.array([sn, b1, self.f, fnl*(b1 - self.p)])
+        # Add RSD damping factor term (Warning: shotnoise is not damped !!) --> params_gal will be (4, nkbins)
+        params_gal = params_gal[:,None] * [np.ones_like(self.k['gg']), self.D_g(self.k['gg'], sigmag), self.D_g(self.k['gg'], sigmag), self.D_g(self.k['gg'], sigmag)]
         idx_gal_1 = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in self.suff_gal_list]
         idx_gal_2 = [self.surr_fields[f'gal-{ell[1]}-{suff}'] for suff in self.suff_gal_list]
 
@@ -696,12 +682,18 @@ class KszPipeOutdir:
         assert ell[0] in self.spin_gal
         assert ell[1] in self.spin_vr
 
-        params_gal = np.array([sn, self.b1_rsd(b1, ell, style='gv'), fnl*(b1 - self.p)])
-        params_gal = params_gal[:,None] * self.D_g(self.k['gv'], sigmag)[None, :]  # shape (3, nkbins)
+        if ell==[0,1] and bfg != 0:
+            print('ATTENTION, sigmav should not multiply the bfg term since it has different RSD dependence (it is a galaxy dependence...)')
+
+        params_gal = np.array([sn, b1, self.f, fnl*(b1 - self.p)])
+        # Add RSD damping factor term: (Warning: only b1 / fnl terms are damped, not the shotnoise term) --> params_gal will be (4, nkbins)
+        params_gal = params_gal[:,None] * [np.ones_like(self.k['gv']), self.D_g(self.k['gv'], sigmag), self.D_g(self.k['gv'], sigmag), self.D_g(self.k['gv'], sigmag)]
         idx_gal = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in self.suff_gal_list]
 
-        params_vel = np.array([snv, bv, bfg]) if self.sim_surr_fg else np.array([snv, bv])
-        params_vel = params_vel[:, None] * self.D_v(self.k['gv'], sigmav)[None, :]  # shape (3, nkbins)
+        if self.sim_surr_fg:
+            params_vel = np.array([snv, bv, bfg])[:,None] * [np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav), np.ones_like(self.k['gv'])]  # Add RSD damping factor term --> shape (3, nkbins)
+        else:
+            params_vel = np.array([snv, bv])[:,None] * [np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav)]  # Add RSD damping factor term --> shape (2, nkbins)
         idx_vr_1 = [self.surr_fields[f'{freq[0]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_2 = [self.surr_fields[f'{freq[1]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
 
@@ -726,8 +718,10 @@ class KszPipeOutdir:
         assert ell[0] in self.spin_vr
         assert ell[1] in self.spin_vr
 
-        params_vel = np.array([snv, bv, bfg]) if self.sim_surr_fg else np.array([snv, bv])
-        params_vel = params_vel[:, None] * self.D_v(self.k['vv'], sigmav)[None, :]  # shape (3, nkbins)
+        if self.sim_surr_fg:
+            params_vel = np.array([snv, bv, bfg])[:,None] * [np.ones_like(self.k['vv']), self.D_v(self.k['vv'], sigmav), np.ones_like(self.k['vv'])]  # Add RSD damping factor term --> shape (3, nkbins)
+        else:
+            params_vel = np.array([snv, bv])[:,None] * [np.ones_like(self.k['vv']), self.D_v(self.k['vv'], sigmav)]  # Add RSD damping factor term --> shape (2, nkbins)
 
         idx_vr_11 = [self.surr_fields[f'{freq[0][0]}-{ell[0]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_12 = [self.surr_fields[f'{freq[0][1]}-{ell[0]}-{suff}'] for suff in self.suff_vel_list]
@@ -737,7 +731,7 @@ class KszPipeOutdir:
         pvv = field[0][0] * self.surr_mean[self.binning['vv']][idx_vr_11,:,:] + field[0][1] * self.surr_mean[self.binning['vv']][idx_vr_12,:,:] # shape (#params_vel, #fields, nkbins)
         pvv = np.sum(params_vel[:, None, :] * pvv, axis=0) # shape (#fields, nkbins)
         pvv = field[1][0] * pvv[idx_vr_21,:] + field[1][1] * pvv[idx_vr_22,:]      # shape (#params_vel, nkbins)
-        return np.sum(params_vel[:, :] * pvv, axis=0) * self.D_v(self.k['vv'], sigmav)**2  # shape (nkbins)
+        return np.sum(params_vel[:, :] * pvv, axis=0) # shape (nkbins)
 
     def pggxpgg_cov(self, b11=1, fnl1=0, sn1=1, sigmag1=0, b12=1, fnl2=0, sn2=1, sigmag2=0,
                     ell1=[0, 0], ell2=[0, 0]):
@@ -747,13 +741,22 @@ class KszPipeOutdir:
         idx_gal_21 = [self.surr_fields[f'gal-{ell2[0]}-{suff}'] for suff in self.suff_gal_list]
         idx_gal_22 = [self.surr_fields[f'gal-{ell2[1]}-{suff}'] for suff in self.suff_gal_list]
 
-        coeffs1 = np.array([sn1, self.b1_rsd(b11, ell1, style='gg'), fnl1*(b11 - self.p)])
+        ## TODO: write a function to compute these coeffs to avoid code duplication in pggxpgg, pggxpgv, pgvxpgv, pgvxpvv, pvvxpvv!!!
+        coeffs1 = np.array([sn1, b11, self.f, fnl1*(b11 - self.p)])
         coeffs1 = np.ravel(coeffs1[:,None]*coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_11)*len(idx_gal_12), )
-        coeffs1 = coeffs1[:,None] * self.D_g(self.k['gg'], sigmag1)[None,:]**2
+        # Add RSD damping factor term: (Warning: only b1 / fnl terms are damped, not the shotnoise term) --> shape (6, nkbins)
+        rsd1 = np.array([np.ones_like(self.k['gg']), self.D_g(self.k['gg'], sigmag1), self.D_g(self.k['gg'], sigmag1), self.D_g(self.k['gg'], sigmag1)])
+        rsd1 = rsd1[:,None] * rsd1[None,:]
+        rsd1 = rsd1.reshape(rsd1.shape[0]*rsd1.shape[1], rsd1.shape[2])
+        coeffs1 = coeffs1[:,None] * rsd1 # shape (6, nkbins)
 
-        coeffs2 = np.array([1, self.b1_rsd(b12, ell2, style='gg'), fnl2*(b12 - self.p)])
+        coeffs2 = np.array([1, b12, self.f, fnl2*(b12 - self.p)])
         coeffs2 = np.ravel(coeffs2[:,None]*coeffs2[None,:])
-        coeffs2 = coeffs2[:,None] * self.D_g(self.k['gg'], sigmag2)[None,:]**2
+        # Add RSD damping factor term:
+        rsd2 = np.array([np.ones_like(self.k['gg']), self.D_g(self.k['gg'], sigmag2), self.D_g(self.k['gg'], sigmag2), self.D_g(self.k['gg'], sigmag2)])
+        rsd2 = rsd2[:,None] * rsd2[None,:]
+        rsd2 = rsd2.reshape(rsd2.shape[0]*rsd2.shape[1], rsd2.shape[2])
+        coeffs2 = coeffs2[:,None] * rsd2 # shape (6, nkbins)
 
         # array with all the coefficiens !
         # shape (len(idx_gal_21)*len(idx_gal_22)**2, nkbins, nkbins)
@@ -790,11 +793,19 @@ class KszPipeOutdir:
         idx_vr2_1 = [self.surr_fields[f'{freq2[0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr2_2 = [self.surr_fields[f'{freq2[1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]       
 
-        coeffs1 = np.ravel(np.array([sn1, self.b1_rsd(b11, ell1, style='gv'), fnl1*(b11 - self.p)])[:,None] * (np.array([snv1, bv1, bfg1]) if self.sim_surr_fg else np.array([snv2, bv1]))[None,:])
-        coeffs1 = coeffs1[:,None] * self.D_g(self.k['gv'], sigmag1)[None,:] * self.D_v(self.k['gv'], sigmav1)[None,:]
+        coeffs1 = np.ravel(np.array([sn1, b11, self.f, fnl1*(b11 - self.p)])[:,None] * (np.array([snv1, bv1, bfg1]) if self.sim_surr_fg else np.array([snv2, bv1]))[None,:])
+        rsd11 = np.array([np.ones_like(self.k['gv']), self.D_g(self.k['gv'], sigmag1), self.D_g(self.k['gv'], sigmag1), self.D_g(self.k['gv'], sigmag1)])
+        rsd12 = np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav1), np.ones_like(self.k['gv'])]) if self.sim_surr_fg else np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav1)])
+        rsd1 = rsd11[:,None] * rsd12[None,:]
+        rsd1 = rsd1.reshape(rsd1.shape[0]*rsd1.shape[1], rsd1.shape[2])
+        coeffs1 = coeffs1[:,None] * rsd1 
 
-        coeffs2 = np.ravel(np.array([sn2, self.b1_rsd(b12, ell2, style='gv'), fnl2*(b12 - self.p)])[:,None] * (np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2]))[None,:])
-        coeffs2 = coeffs2[:,None] * self.D_g(self.k['gv'], sigmag2)[None,:] * self.D_v(self.k['gv'], sigmav2)[None,:]
+        coeffs2 = np.ravel(np.array([sn2, b12, fnl2*(b12 - self.p)])[:,None] * (np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2]))[None,:])
+        rsd21 = np.array([np.ones_like(self.k['gv']), self.D_g(self.k['gv'], sigmag2), self.D_g(self.k['gv'], sigmag2), self.D_g(self.k['gv'], sigmag2)])
+        rsd22 = np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav2), np.ones_like(self.k['gv'])]) if self.sim_surr_fg else np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav2)])
+        rsd2 = rsd21[:,None] * rsd22[None,:]
+        rsd2 = rsd2.reshape(rsd2.shape[0]*rsd2.shape[1], rsd2.shape[2])
+        coeffs2 = coeffs2[:,None] * rsd2 
 
         # shape (..., nkbins, nkbins)
         coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
@@ -832,11 +843,19 @@ class KszPipeOutdir:
 
         coeffs1 = np.array([snv1, bv1, bfg1]) if self.sim_surr_fg else np.array([snv1, bv1])
         coeffs1 = np.ravel(coeffs1[:,None] * coeffs1[None,:])
-        coeffs1 = coeffs1[:,None] * self.D_v(self.k['vv'], sigmav1)[None,:]**2
+        # Add RSD damping factor term:
+        rsd1 = np.array([np.ones_like(self.k['vv']), self.D_v(self.k['vv'], sigmav1), np.ones_like(self.k['vv'])]) if self.sim_surr_fg else np.array([np.ones_like(self.k['vv']), self.D_v(self.k['vv'], sigmav1)])
+        rsd1 = rsd1[:,None] * rsd1[None,:]
+        rsd1 = rsd1.reshape(rsd1.shape[0]*rsd1.shape[1], rsd1.shape[2])
+        coeffs1 = coeffs1[:,None] * rsd1
 
         coeffs2 = np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2])
         coeffs2 = coeffs2 = np.ravel(coeffs2[:,None]*coeffs2[None,:])
-        coeffs2 = coeffs2[:,None] * self.D_v(self.k['vv'], sigmav2)[None,:]**2
+        # Add RSD damping factor term:
+        rsd2 = np.array([np.ones_like(self.k['vv']), self.D_v(self.k['vv'], sigmav2), np.ones_like(self.k['vv'])]) if self.sim_surr_fg else np.array([np.ones_like(self.k['vv']), self.D_v(self.k['vv'], sigmav2)])
+        rsd2 = rsd2[:,None] * rsd2[None,:]
+        rsd2 = rsd2.reshape(rsd2.shape[0]*rsd2.shape[1], rsd2.shape[2])
+        coeffs2 = coeffs2[:,None] * rsd2
 
         # shape (..., nkbins, nkbins)
         coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
@@ -873,13 +892,21 @@ class KszPipeOutdir:
         idx_vr1_1 = [self.surr_fields[f'{freq2[0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr1_2 = [self.surr_fields[f'{freq2[1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
 
-        coeffs1 = np.array([sn1, self.b1_rsd(b11, ell1, style='gg'), fnl1*(b11 - self.p)])
-        coeffs1 = np.ravel(coeffs1[:,None] * coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_11)*len(idx_gal_12), )
-        coeffs1 = coeffs1[:,None] * self.D_g(self.k['gg'], sigmag1)[None,:]**2
-        
-        coeffs2 = np.ravel(np.array([sn2, self.b1_rsd(b12, ell2, style='gv'), fnl2*(b12 - self.p)])[:,None] * (np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2]))[None,:])
-        coeffs2 = coeffs2[:,None] * self.D_g(self.k['gv'], sigmag2)[None,:] * self.D_v(self.k['gv'], sigmav2)[None,:]
-        
+        coeffs1 = np.array([sn1, b11, self.f, fnl1*(b11 - self.p)])
+        coeffs1 = np.ravel(coeffs1[:,None]*coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_11)*len(idx_gal_12), )
+        # Add RSD damping factor term: (Warning: only b1 / fnl terms are damped, not the shotnoise term) --> shape (6, nkbins)
+        rsd1 = np.array([np.ones_like(self.k['gg']), self.D_g(self.k['gg'], sigmag1), self.D_g(self.k['gg'], sigmag1), self.D_g(self.k['gg'], sigmag1)])
+        rsd1 = rsd1[:,None] * rsd1[None,:]
+        rsd1 = rsd1.reshape(rsd1.shape[0]*rsd1.shape[1], rsd1.shape[2])
+        coeffs1 = coeffs1[:,None] * rsd1 # shape (6, nkbins)
+
+        coeffs2 = np.ravel(np.array([sn2, b12, self.f, fnl2*(b12 - self.p)])[:,None] * (np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2]))[None,:])
+        rsd21 = np.array([np.ones_like(self.k['gv']), self.D_g(self.k['gv'], sigmag2), self.D_g(self.k['gv'], sigmag2), self.D_g(self.k['gv'], sigmag2)])
+        rsd22 = np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav2), np.ones_like(self.k['gv'])]) if self.sim_surr_fg else np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav2)])
+        rsd2 = rsd21[:,None] * rsd22[None,:]
+        rsd2 = rsd2.reshape(rsd2.shape[0]*rsd2.shape[1], rsd2.shape[2])
+        coeffs2 = coeffs2[:,None] * rsd2 
+
         # shape (..., nkbins, nkbins)
         coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
         
@@ -917,12 +944,20 @@ class KszPipeOutdir:
         idx_vr2_2_1 = [self.surr_fields[f'{freq2[1][0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr2_2_2 = [self.surr_fields[f'{freq2[1][1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]       
 
-        coeffs1 = np.ravel(np.array([sn1, self.b1_rsd(b11, ell1, style='gv'), fnl1*(b11 - self.p)])[:,None] * (np.array([snv1, bv1, bfg1]) if self.sim_surr_fg else np.array([snv1, bv1]))[None,:])
-        coeffs1 = coeffs1[:,None] * self.D_g(self.k['gv'], sigmag1)[None,:] * self.D_v(self.k['gv'], sigmav1)[None,:]
+        coeffs1 = np.ravel(np.array([sn1, b1, self.f, fnl1*(b11 - self.p)])[:,None] * (np.array([snv1, bv1, bfg1]) if self.sim_surr_fg else np.array([snv2, bv1]))[None,:])
+        rsd11 = np.array([np.ones_like(self.k['gv']), self.D_g(self.k['gv'], sigmag1), self.D_g(self.k['gv'], sigmag1), self.D_g(self.k['gv'], sigmag1)])
+        rsd12 = np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav1), np.ones_like(self.k['gv'])]) if self.sim_surr_fg else np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav1)])
+        rsd1 = rsd11[:,None] * rsd12[None,:]
+        rsd1 = rsd1.reshape(rsd1.shape[0]*rsd1.shape[1], rsd1.shape[2])
+        coeffs1 = coeffs1[:,None] * rsd1 
 
         coeffs2 = np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2])
-        coeffs2 = np.ravel(coeffs2[:,None] * coeffs2[None,:])
-        coeffs2 = coeffs2[:,None] * self.D_v(self.k['vv'], sigmav2)[None,:]**2
+        coeffs2 = coeffs2 = np.ravel(coeffs2[:,None]*coeffs2[None,:])
+        # Add RSD damping factor term:
+        rsd2 = np.array([np.ones_like(self.k['vv']), self.D_v(self.k['vv'], sigmav2), np.ones_like(self.k['vv'])]) if self.sim_surr_fg else np.array([np.ones_like(self.k['vv']), self.D_v(self.k['vv'], sigmav2)])
+        rsd2 = rsd2[:,None] * rsd2[None,:]
+        rsd2 = rsd2.reshape(rsd2.shape[0]*rsd2.shape[1], rsd2.shape[2])
+        coeffs2 = coeffs2[:,None] * rsd2
 
         # shape (..., nkbins, nkbins)
         coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
@@ -963,12 +998,21 @@ class KszPipeOutdir:
         idx_vr2_2_1 = [self.surr_fields[f'{freq2[1][0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr2_2_2 = [self.surr_fields[f'{freq2[1][1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]       
 
-        coeffs1 = np.array([sn1, self.b1_rsd(b11, ell1, style='gg'), fnl1*(b11 - self.p)])
-        coeffs1 = np.ravel(coeffs1[:,None] * coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_1)*len(idx_gal_1), )
-        coeffs1 = coeffs1[:,None] * self.D_g(self.k['gg'], sigmag1)[None,:]**2
+        coeffs1 = np.array([sn1, b1, self.f, fnl1*(b11 - self.p)])
+        coeffs1 = np.ravel(coeffs1[:,None]*coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_11)*len(idx_gal_12), )
+        # Add RSD damping factor term: (Warning: only b1 / fnl terms are damped, not the shotnoise term) --> shape (6, nkbins)
+        rsd1 = np.array([np.ones_like(self.k['gg']), self.D_g(self.k['gg'], sigmag1), self.D_g(self.k['gg'], sigmag1), self.D_g(self.k['gg'], sigmag1)])
+        rsd1 = rsd1[:,None] * rsd1[None,:]
+        rsd1 = rsd1.reshape(rsd1.shape[0]*rsd1.shape[1], rsd1.shape[2])
+        coeffs1 = coeffs1[:,None] * rsd1 # shape (6, nkbins)
 
-        coeffs2 = np.array([snv2, bv2, bfg2, bv2, bv2**2, bv2*bfg2, bfg2, bfg2*bv2, bfg2**2]) if self.sim_surr_fg else np.array([snv2, bv2, bv2, bv2**2])
-        coeffs2 = coeffs2[:,None] * self.D_v(self.k['vv'], sigmav2)[None,:]**2
+        coeffs2 = np.array([snv2, bv2, bfg2]) if self.sim_surr_fg else np.array([snv2, bv2])
+        coeffs2 = coeffs2 = np.ravel(coeffs2[:,None]*coeffs2[None,:])
+        # Add RSD damping factor term:
+        rsd2 = np.array([np.ones_like(self.k['vv']), self.D_v(self.k['vv'], sigmav2), np.ones_like(self.k['vv'])]) if self.sim_surr_fg else np.array([np.ones_like(self.k['vv']), self.D_v(self.k['vv'], sigmav2)])
+        rsd2 = rsd2[:,None] * rsd2[None,:]
+        rsd2 = rsd2.reshape(rsd2.shape[0]*rsd2.shape[1], rsd2.shape[2])
+        coeffs2 = coeffs2[:,None] * rsd2
 
         # shape (..., nkbins, nkbins)
         coeff_cov = (coeffs1[:,None,:,None] * coeffs2[None,:,None,:]).reshape(coeffs1.shape[0]*coeffs2.shape[0], coeffs1.shape[1], coeffs2.shape[1])
@@ -995,25 +1039,25 @@ class KszPipeOutdir:
         r"""Returns shape ``(nkbins, nkbins)`` cross-covariance matrix of $P_{vv}^{surr}(k) \times P_{gg}^{surr}(k)$."""
         return self.pggxpvv_cov(b11=b12, fnl1=fnl2, sn1=sn2, sigmag1=sigmag2, bv2=bv1, snv2=snv1, bfg2=bfg1, sigmav2=sigmav1, ell1=ell2, ell2=ell1, freq2=freq1, field2=field1).T
 
-    def _pgg_rms(self, b1=1, fnl=0, sn=1, ell=[0, 0]):
+    def _pgg_rms(self, b1=1, fnl=0, sn=1, sigmag=0, ell=[0, 0]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array, containing sqrt(Var($P_{gg}^{surr}(k)$))."""
         assert self.nsurr >= 2
-        return np.sqrt(np.var(self._pgg_surr(b1=b1, fnl=fnl, sn=sn, ell=ell), axis=0))
+        return np.sqrt(np.var(self._pgg_surr(b1=b1, fnl=fnl, sn=sn, sigmag=sigmag, ell=ell), axis=0))
 
-    def _pgv_rms(self, b1=1, fnl=0, sn=1, bv=1, snv=1, bfg=0, freq=['90','150'], field=[1, 0], ell=[0, 1]):
+    def _pgv_rms(self, b1=1, fnl=0, sn=1, bv=1, snv=1, bfg=0, sigmag=0, sigmav=0, freq=['90','150'], field=[1, 0], ell=[0, 1]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array containing sqrt(Var($P_{gv}^{surr}(k)$))."""
         assert self.nsurr >= 2
-        return np.sqrt(np.var(self._pgv_surr(b1=b1, fnl=fnl, sn=sn, bv=bv, snv=snv, bfg=bfg, freq=freq, field=field, ell=ell), axis=0))
+        return np.sqrt(np.var(self._pgv_surr(b1=b1, fnl=fnl, sn=sn, bv=bv, snv=snv, bfg=bfg, sigmag=sigmag, sigmav=sigmav, freq=freq, field=field, ell=ell), axis=0))
 
-    def _pvv_rms(self, bv=1, snv=1, bfg=0, freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]], ell=[1,1]):
+    def _pvv_rms(self, bv=1, snv=1, bfg=0, sigmav=0, freq=[['90','150'], ['90','150']], field=[[1,0], [1,0]], ell=[1,1]):
         r"""For plotting purpose, returns shape ``(nkbins,)`` array containing sqrt(var($P_{vv}^{data}(k)$))"""
         assert self.nsurr >= 2
-        return np.sqrt(np.var(self._pvv_surr(bv=bv, snv=snv, bfg=bfg, freq=freq, field=field, ell=ell), axis=0))
+        return np.sqrt(np.var(self._pvv_surr(bv=bv, snv=snv, bfg=bfg, sigmav=sigmav, freq=freq, field=field, ell=ell), axis=0))
 
     def _pgg_surr(self, b1=1, fnl=0, sn=1, sigmag=0, ell=[0, 0]):
         """For plotting purpose, returns shape (nsurr, nkbins) array, containing P_{gg} for each surrogate"""
-        params_gal = np.array([sn, self.b1_rsd(b1, ell, style='gg'), fnl*(b1 - self.p)])
-        params_gal = params_gal[:,None] * self.D_g(self.k['gg'], sigmag)[None, :]  # shape (3, nkbins)
+        params_gal = np.array([sn, b1, self.f, fnl*(b1 - self.p)])
+        params_gal = params_gal[:,None] * [np.ones_like(self.k['gg']), self.D_g(self.k['gg'], sigmag), self.D_g(self.k['gg'], sigmag), self.D_g(self.k['gg'], sigmag)]  # shape (4, nkbins)
 
         idx_gal_1 = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in self.suff_gal_list]
         idx_gal_2 = [self.surr_fields[f'gal-{ell[1]}-{suff}'] for suff in self.suff_gal_list]
@@ -1028,12 +1072,12 @@ class KszPipeOutdir:
         assert ell[0] in self.spin_gal
         assert ell[1] in self.spin_vr
 
-        params_gal = np.array([sn, self.b1_rsd(b1, ell, style='gv'), fnl*(b1 - self.p)])
-        params_gal = params_gal[:,None] * self.D_g(self.k['gv'], sigmag)[None, :]  # shape (3, nkbins)
+        params_gal = np.array([sn, b1, self.f, fnl*(b1 - self.p)])
+        params_gal = params_gal[:,None] * [np.ones_like(self.k['gv']), self.D_g(self.k['gv'], sigmag), self.D_g(self.k['gv'], sigmag), self.D_g(self.k['gv'], sigmag)] # shape (4, nkbins)
         idx_gal = [self.surr_fields[f'gal-{ell[0]}-{suff}'] for suff in self.suff_gal_list]
 
         params_vel = np.array([snv, bv, bfg]) if self.sim_surr_fg else np.array([snv, bv])
-        params_vel = params_vel[:, None] * self.D_v(self.k['gv'], sigmav)[None, :]  # shape (3, nkbins)
+        params_vel = params_vel[:, None] * self.D_v(self.k['gv'], sigmav)[None, :]  # shape (2 or 3, nkbins)
         idx_vr_1 = [self.surr_fields[f'{freq[0]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr_2 = [self.surr_fields[f'{freq[1]}-{ell[1]}-{suff}'] for suff in self.suff_vel_list]
 

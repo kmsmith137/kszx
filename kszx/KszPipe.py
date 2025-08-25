@@ -938,7 +938,7 @@ class KszPipeOutdir:
         idx_vr2_2_1 = [self.surr_fields[f'{freq2[1][0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr2_2_2 = [self.surr_fields[f'{freq2[1][1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]       
 
-        coeffs1 = np.ravel(np.array([sn1, b1, self.f, fnl1*(b11 - self.p)])[:,None] * (np.array([snv1, bv1, bfg1]) if self.sim_surr_fg else np.array([snv2, bv1]))[None,:])
+        coeffs1 = np.ravel(np.array([sn1, b11, self.f, fnl1*(b11 - self.p)])[:,None] * (np.array([snv1, bv1, bfg1]) if self.sim_surr_fg else np.array([snv2, bv1]))[None,:])
         rsd11 = np.array([np.ones_like(self.k['gv']), self.D_g(self.k['gv'], sigmag1), self.D_g(self.k['gv'], sigmag1), self.D_g(self.k['gv'], sigmag1)])
         rsd12 = np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav1), np.ones_like(self.k['gv'])]) if self.sim_surr_fg else np.array([np.ones_like(self.k['gv']), self.D_v(self.k['gv'], sigmav1)])
         rsd1 = rsd11[:,None] * rsd12[None,:]
@@ -992,7 +992,7 @@ class KszPipeOutdir:
         idx_vr2_2_1 = [self.surr_fields[f'{freq2[1][0]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]
         idx_vr2_2_2 = [self.surr_fields[f'{freq2[1][1]}-{ell2[1]}-{suff}'] for suff in self.suff_vel_list]       
 
-        coeffs1 = np.array([sn1, b1, self.f, fnl1*(b11 - self.p)])
+        coeffs1 = np.array([sn1, b11, self.f, fnl1*(b11 - self.p)])
         coeffs1 = np.ravel(coeffs1[:,None]*coeffs1[None,:]) # shape (6, ) ie (len(idx_gal_11)*len(idx_gal_12), )
         # Add RSD damping factor term: (Warning: only b1 / fnl terms are damped, not the shotnoise term) --> shape (6, nkbins)
         rsd1 = np.array([np.ones_like(self.k['gg']), self.D_g(self.k['gg'], sigmag1), self.D_g(self.k['gg'], sigmag1), self.D_g(self.k['gg'], sigmag1)])

@@ -174,7 +174,8 @@ def read_fits_catalog(filename, name=None):
         catalog.add_column('wzf', f[1].read('WEIGHT_ZFAIL'))
         catalog.add_column('wsys', f[1].read('WEIGHT_SYS'))
         catalog.add_column('frac_tlobs_tiles', f[1].read('FRAC_TLOBS_TILES'))
-
+        catalog.add_column('nx', f[1].read('NX'))
+        
     catalog._announce_file_read()
     return catalog
 

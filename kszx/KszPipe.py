@@ -679,9 +679,6 @@ class KszPipeOutdir:
         assert ell[0] in self.spin_gal
         assert ell[1] in self.spin_vr
 
-        if ell==[0,1] and bfg != 0:
-            print('ATTENTION, sigmav should not multiply the bfg term since it has different RSD dependence (it is a galaxy dependence...)')
-
         params_gal = np.array([sn, b1, self.f, fnl*(b1 - self.p)])
         # Add RSD damping factor term: (Warning: only b1 / fnl terms are damped, not the shotnoise term) --> params_gal will be (4, nkbins)
         params_gal = params_gal[:,None] * [np.ones_like(self.k['gv']), self.D_g(self.k['gv'], sigmag), self.D_g(self.k['gv'], sigmag), self.D_g(self.k['gv'], sigmag)]

@@ -69,6 +69,7 @@ class SurrogateFactory:
         self.xyz_true = randcat.get_xyz(cosmo, ztrue_col)
         
         self.D = cosmo.D(z=ztrue, z0norm=True)
+        self.f = cosmo.frsd(z=ztrue) 
         self.faH = cosmo.frsd(z=ztrue) * cosmo.H(z=ztrue) / (1+ztrue)
         self.sigma2 = self._integrate_kgrid(box, cosmo.Plin_z0(box.get_k()))
 
@@ -101,20 +102,27 @@ class SurrogateFactory:
         ngal = int(ngal+0.5)  # round
         assert 0 < ngal <= self.nrand
 
+        # delta is in fourier space:
         delta = core.simulate_gaussian_field(self.box, self.cosmo.Plin_z0)
         core.apply_kernel_compensation(self.box, delta, self.kernel)
 
+        # Let's create the different fields in real space, so that we can interpolate them to the random catalog.
         # Note that phi = delta/alpha is independent of z (in linear theory)
         phi = core.multiply_kfunc(self.box, delta, lambda k: 1.0/self.cosmo.alpha_z0(k=k), dc=0)
-        phi = core.interpolate_points(self.box, phi, self.xyz_true, self.kernel, fft=True)
+        phi = core.interpolate_points(self.box, phi, self.xyz_true, self.kernel, fft=True, spin=0)
         
         # vr = (faHD/k) delta, evaluated at xyz_true.
         vr = core.multiply_kfunc(self.box, delta, lambda k: 1.0/k, dc=0)
         vr = core.interpolate_points(self.box, vr, self.xyz_true, self.kernel, fft=True, spin=1)
-        vr *= self.faH
-        vr *= self.D
+        vr *= self.faH * self.D
+        
+        # Add Kaiser term (L_2(mu) = 1/2(3*mu**2 -1)).
+        rsd0 = core.interpolate_points(self.box, delta, self.xyz_true, self.kernel, fft=True, spin=0)
+        rsd2 = core.interpolate_points(self.box, delta, self.xyz_true, self.kernel, fft=True, spin=2)
+        rsd = 2 / 3 * self.D * rsd2 + 1 / 3 * self.D * rsd0  # This term will be multiply by self.f 
 
-        delta = core.interpolate_points(self.box, delta, self.xyz_true, self.kernel, fft=True)
+        # delta = core.interpolate_points(self.box, delta, self.xyz_true, self.kernel, fft=True)  # avoid running one more FFT.
+        delta = rsd0
         delta *= self.D
             
         # M = random vector with (nrand-ngal) 0s and (ngal) 1s.
@@ -126,6 +134,7 @@ class SurrogateFactory:
 
         self.ngal = ngal
         self.delta = delta
+        self.rsd = rsd
         self.phi = phi
         self.vr = vr
         self.M = M

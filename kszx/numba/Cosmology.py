@@ -9,7 +9,6 @@ from . import numba_utils
 
 ####################################################################################################
 
-
 class CosmologicalParams:
     def __init__(self, name=None):
         r"""Simple data class containing cosmological params (ombh2, omch2, etc.)

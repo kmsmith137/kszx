@@ -43,13 +43,23 @@ def random_shape(ndim=None, nmin=1):
     return ret
 
 
-def random_box(ndim=None, nmin=2):
+def random_box(ndim=None, nmin=2, avoid_small_r=False):
     npix = random_shape(ndim, nmin)
     pixsize = np.random.uniform(1.0, 10.0)
-    
-    t = np.random.uniform(0, pixsize)
-    cpos = np.random.uniform(-t*npix, t*npix, size=len(npix))
-    return Box(npix, pixsize, cpos)
+
+    while True:
+        t = np.random.uniform(0, pixsize)
+        cpos = np.random.uniform(-t*npix, t*npix, size=len(npix))
+        box = Box(npix, pixsize, cpos)
+        
+        if avoid_small_r:
+            # The 'avoid_small_r' arg is for tests which are sensitive to the direction
+            # of {\hat r}, e.g. spin-l FFTs.
+            rmin2 = sum(np.min(box.get_r_component(axis))**2 for axis in range(box.ndim))
+            if rmin2 < 0.01 * pixsize**2:
+                continue
+            
+        return box
 
 
 def random_kbin_edges(box, nbins=None):

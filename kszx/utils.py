@@ -255,6 +255,14 @@ def asarray(x, caller, arg, dtype=None, allow_none=False):
     raise RuntimeError(f"{caller}: couldn't convert {arg} to array{s} (value={x})")
     
 
+def one_hot(shape, indices, dtype=float, value=1):
+    """Returns 'one-hot' array (all entries are zero except one)."""
+    
+    ret = np.zeros(shape, dtype=dtype)
+    ret[indices] = value
+    return ret
+
+    
 def scattered_add(lhs, ix, rhs, normalize_sum = None):
     """Returns sum of RHS values (before applying 'normalize_sum').
     FIXME: Is there a numpy function that does this? If not, write a C++ kernel.

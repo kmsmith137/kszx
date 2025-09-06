@@ -11,6 +11,7 @@ from .core import \
     multiply_kfunc, \
     multiply_r_component, \
     apply_partial_derivative, \
+    zero_nyquist_modes, \
     simulate_white_noise, \
     simulate_gaussian_field, \
     estimate_power_spectrum, \

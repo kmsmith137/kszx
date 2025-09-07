@@ -231,7 +231,7 @@ class Cosmology:
         Q = np.log(pzk.T / k.reshape((-1,1)))
         
         self._pk_kmin = k[0]
-        self._pk0_interp = numba_utils.spline1d(k, pzk[0,:], loglog=True)  
+        self._pk0_interp = numba_utils.spline1d(k, pzk[0,:], log_x=True, log_y=True)  
         #self._pkz_interp = utils.spline2d(np.log(k), z, Q)             # interpolate (log(k),z) -> Q
 
         # Growth function.

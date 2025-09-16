@@ -165,6 +165,7 @@ def read_fits_catalog(filename, name=None):
         #     NX                  f8  
         #     WEIGHT_FKP          f8  
         
+        catalog.add_column('targetid', f[1].read('TARGETID'))
         catalog.add_column('ra_deg', f[1].read('RA'))
         catalog.add_column('dec_deg', f[1].read('DEC'))
         catalog.add_column('z', f[1].read('Z'))

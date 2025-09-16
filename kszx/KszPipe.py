@@ -273,7 +273,10 @@ class KszPipe:
         if not (run or force):
             raise RuntimeError(f'KszPipe.get_pk_surrogate(): run=False was specified, and file {fname} not found')
 
-        print(f'get_pk_surrogate({isurr}): running\n', end='')
+        import time 
+        start = time.time()
+
+        print(f'[{isurr=}] get_pk_surrogate(): start')
 
         zobs = self.rcat.zobs
         nrand = self.rcat.size
@@ -289,6 +292,8 @@ class KszPipe:
         if np.min(eta_rms) < 0:
             raise RuntimeError('Noise RMS went negative! This is probably a symptom of not enough randoms (note {(ngal/nrand)=})')
         eta = np.random.normal(scale=eta_rms)
+
+        print(f'[{isurr=}] simulate_surrogate done', time.time() - start)
 
         # Each surrogate field is a sum (with coefficients) over the random catalog.
         # First we compute the coefficient arrays.
@@ -328,12 +333,17 @@ class KszPipe:
             for term in [Sg_noise, dSg_db1, dSg_df, dSg_dfnl]:
                 fourier_space_maps += [core.grid_points(self.box, self.rcat_xyz_obs, term, kernel=self.kernel, fft=True, spin=spin, compensate=True)]
                 idx += [0]
+
+            print(f'[{isurr=}] Galaxy {spin=} fields done', time.time() - start)
+        
         for spin in self.spin_vr:
             for i, freq in enumerate(self.cmb_fields): 
                 terms = [Sv_noise, Sv_signal, Sv_fg] if self.sim_surr_fg else [Sv_noise, Sv_signal]
                 for term in terms:
                     fourier_space_maps += [core.grid_points(self.box, self.rcat_xyz_obs, term[freq], kernel=self.kernel, fft=True, spin=spin, compensate=True)]
                     idx += [i + 1]
+
+            print(f'[{isurr=}] Velocity {spin=} fields done', time.time() - start)
 
         # Rescale window function, by a factor (ngal/nrand) in each footprint.
         wf = (ngal/nrand)**2 * self.window_function
@@ -345,9 +355,10 @@ class KszPipe:
             # Estimate power spectra. and normalize by dividing by window function.
             pk = core.estimate_power_spectrum(self.box, fourier_space_maps, kbin_edges)
             pk /= wf[:,:,None]
-
+            # save pk:
             io_utils.write_npy(fname[i], pk)
             pks += [pk]
+
         if len(fname): pks = pks[0]
         return pks
 
@@ -450,15 +461,20 @@ class KszPipe:
         # caller must adjust the number of processes to the amount of memory in the node.
         
         with utils.Pool(processes) as pool:
-            l = [ ]
-                
+            # before going to the surrogate do the data and wait that they finish:
             if not have_data:
-                l += [pool.apply_async(self.get_pk_data, (True, False))]   # (run,force)=(True,False)
-            for i in missing_surrs:
-                l += [pool.apply_async(self.get_pk_surrogate, (i, True))]  # (run,force)=(True,False)
-
-            for x in l:
+                x = pool.apply_async(self.get_pk_data, (True, False))   # (run,force)=(True,False)
                 x.get()
+
+            # to avoid the pool launch new surrogate on the same process before the completion of the previous one, we need to make batch and wait that all the job in the batch are done:
+            # I'm surprised that there is no function in multiporcess to do this ... 
+            nbatchs = len(missing_surrs) // processes
+            for nn in range(nbatchs):
+                print(f'Start batch {nn}/{nbatchs}')
+                l = [pool.apply_async(self.get_pk_surrogate, (i, True)) for i in missing_surrs[nn*processes: (nn+1)*processes]]  # (run,force)=(True,False)
+                # .get() block the code until receveing the answer of the pool.apply_async job:
+                for x in l: x.get()
+                print(f'Batch {nn} done!')
 
         if not have_surr:
             # Consolidates all surrogates into one file
@@ -468,7 +484,7 @@ class KszPipe:
 ####################################################################################################
 
 class KszPipeOutdir:
-    def __init__(self, dirname, nsurr=None, p=1.0, f=None, binning={'gg':0, 'gv':0, 'vv':0}):
+    def __init__(self, dirname, nsurr=None, p=1.0, f=None, binning={'gg':0, 'gv':0, 'vv':0}, spin={'g': [0], 'v': [0,1]}):
         r"""A helper class for loading and processing output files from ``class KszPipe``.
 
         Note: for MCMCs and parameter fits, there is a separate class :class:`~kszx.PgvLikelihood`.
@@ -487,6 +503,14 @@ class KszPipeOutdir:
           - ``nsurr`` (integer or None): this is a hack for running on an incomplete
             pipeline. If specified, then ``{dirname}/pk_surr.npy`` is not read.
             Instead we read files of the form ``{dirname}/tmp/pk_surr_{i}.npy``.
+
+        - ``p`` (float): value used to describe b_phi (p=1 for LRG, 1.4/1.6 for QSO)
+
+        - ``f`` (float or None): the growth rate. If None, it is computed from the cosmology.
+
+        - ``binning`` (dict): the binning scheme to load for the different power spectra. It does not allow different binning for the same type of power spectrum for now.
+
+        - ``spin`` (dict): the spin components to load for galaxies (key 'g') and velocity (key 'v'). Useful to reduce the size of the covariance matrix pre-loaded if you want to ignore some spin components.
         """
 
         filename = f'{dirname}/params.yml'
@@ -549,13 +573,29 @@ class KszPipeOutdir:
         else:
             self.f = self.cosmo.frsd(z=params['zeff'])
 
+
+        # Restrict to the requested spin components: 
+        if spin is not None:
+            print(f'Restricting surrogate fields to spin={spin}...')
+            to_test = []
+            for kk in spin.keys():
+                if kk == 'g':
+                    to_test += [f'gal-{ss}-{suff}' for ss in spin[kk] for suff in self.suff_gal_list]
+                if kk == 'v':
+                    for ff in self.cmb_fields:
+                        to_test += [f'{ff}-{ss}-{suff}' for ss in spin[kk] for suff in self.suff_vel_list]
+            idx_to_keep = [self.surr_fields[tt] for tt in to_test if tt in self.surr_fields.keys()]
+
+            pk_surr = [pk_surr[i][:,idx_to_keep][:,:,idx_to_keep] for i in range(len(self.nkbins))]
+            self.surr_fields = {tt: i for i, tt in enumerate(to_test)}
+
         self.pk_surr = pk_surr
         self.nsurr = self.pk_surr[0].shape[0]
 
         # Precompute for each surrogate field dedicated mean and covariance for speed up purpose.
         self.surr_mean = [np.ascontiguousarray(np.mean(self.pk_surr[i], axis=0)) for i in range(len(self.nkbins))] # make contiguous
 
-        nsurr_fields = len(surr_fields)
+        nsurr_fields = len(self.surr_fields)
         self.nsurr_fields = nsurr_fields
 
         print('Computing surrogate covariance matrices ...')

@@ -171,7 +171,6 @@ class BaseLikelihood:
 
         return self.bestfit      
 
-
     def run_mcmc(self, ncpu=1, nwalkers=8, nsamples=10000, discard=1000, thin=5, progress='notebook', extend_chain=False, fn_chain=None):
         r""" 
         Run mcmc with emcee. 
@@ -578,6 +577,46 @@ class Likelihood(BaseLikelihood):
                 plt.yscale('log')
             plt.xlabel('$k$ [Mpc$^{-1}$]')
             plt.legend()
+        plt.tight_layout()
+        if fn_fig is not None: plt.savefig(fn_fig)
+        plt.show()
+
+    def plot_residuals(self, params=None, fn_fig=None):
+        """ """
+        # Compute theory predicition:
+        params = self.bestfit if params is None else params
+        theory = self.mean_and_cov(**params)[0]
+
+        cov = self.mean_and_cov(force_compute_cov=True, **params)[1]
+        err = np.sqrt(np.diag(cov))
+
+        plt.figure(figsize=(3.5*len(self.fields) + 1, 3))
+        for i, key in enumerate(self.fields):
+            plt.subplot(1, len(self.fields), 1+i)
+
+            start, end = np.sum(self.nk[:i], dtype='int'), np.sum(self.nk[:i+1], dtype='int')
+
+            plt.plot(self.k[start:end], (self.data[start:end] - theory[start:end]) / err[start:end], ls=':', marker='.', zorder=10)
+
+            if 'gg' in key:
+                plt.ylabel(r'$\Delta P^{gg}_{\ell=0} / \sigma$')
+                plt.xscale('log')
+            elif 'gv' in key:
+                if self.fields[key]['ell'][1] == 0:
+                    plt.ylabel(r'$\Delta P^{gv}_{\ell=0} / \sigma$')
+                    plt.xscale('log')
+                else:
+                    plt.ylabel(r'$\Delta P^{gv}_{\ell=1} / \sigma$')
+            else:
+                plt.ylabel(r'$\Delta P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'} / \sigma$')
+                plt.xscale('log')
+
+            plt.axhline(2, color='grey', ls='--', lw=1, zorder=0)
+            plt.axhline(0, color='k', ls='-', lw=1, zorder=0)
+            plt.axhline(-2, color='grey', ls='--', lw=1, zorder=0)
+
+            plt.xlabel('$k$ [Mpc$^{-1}$]')
+            
         plt.tight_layout()
         if fn_fig is not None: plt.savefig(fn_fig)
         plt.show()

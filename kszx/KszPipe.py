@@ -573,7 +573,6 @@ class KszPipeOutdir:
         else:
             self.f = self.cosmo.frsd(z=params['zeff'])
 
-
         # Restrict to the requested spin components: 
         if spin is not None:
             print(f'Restricting surrogate fields to spin={spin}...')
@@ -591,30 +590,35 @@ class KszPipeOutdir:
 
         self.pk_surr = pk_surr
         self.nsurr = self.pk_surr[0].shape[0]
+        self.nsurr_fields = len(self.surr_fields)
+
+        self._precompute_mean_and_cov()
+
+        print('KszPipeOutdir initialized.')
+
+    def _precompute_mean_and_cov(self):
+        """Precomputes mean and covariance of surrogate power spectra, for speedup purposes."""
 
         # Precompute for each surrogate field dedicated mean and covariance for speed up purpose.
+        print('Computing surrogate means ...')
         self.surr_mean = [np.ascontiguousarray(np.mean(self.pk_surr[i], axis=0)) for i in range(len(self.nkbins))] # make contiguous
 
-        nsurr_fields = len(self.surr_fields)
-        self.nsurr_fields = nsurr_fields
-
-        print('Computing surrogate covariance matrices ...')
+        print('Computing surrogate covariances ...')
         cov = {}
         to_compute = np.unique([val for val in self.binning.values()])
         for i in to_compute:
             for j in to_compute:
                 if j == i:
-                    cov_tmp = np.cov(self.pk_surr[i].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[i]), rowvar=False)
+                    cov_tmp = np.cov(self.pk_surr[i].reshape(self.nsurr, self.nsurr_fields*self.nsurr_fields*self.nkbins[i]), rowvar=False)
                 else:
                     # DO NOT USE np.cov(X,Y) since it will computes the covariance of the concatenated array --> super memory intensive...)
-                    cov_tmp = utils.cross_covariance(self.pk_surr[i].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[i]), self.pk_surr[j].reshape(self.nsurr, nsurr_fields*nsurr_fields*self.nkbins[j]))
+                    cov_tmp = utils.cross_covariance(self.pk_surr[i].reshape(self.nsurr, self.nsurr_fields*self.nsurr_fields*self.nkbins[i]), self.pk_surr[j].reshape(self.nsurr, self.nsurr_fields*self.nsurr_fields*self.nkbins[j]))
 
-                cov_tmp = cov_tmp.reshape((nsurr_fields*nsurr_fields, self.nkbins[i], nsurr_fields*nsurr_fields, self.nkbins[j]))
+                cov_tmp = cov_tmp.reshape((self.nsurr_fields*self.nsurr_fields, self.nkbins[i], self.nsurr_fields*self.nsurr_fields, self.nkbins[j]))
                 cov_tmp = cov_tmp.transpose(0, 2, 1, 3)         # reorder axes to have cov matrix in the last two indices for each field.
-                # CAn be otpimized here, we only need the upper / lower triangle part of this matrix...
+                # Can be optimized here, we only need the upper / lower triangle part of this matrix...
                 cov[f'{i}-{j}'] = np.ascontiguousarray(cov_tmp)  # make contiguous
         self.surr_cov = cov
-        print('KszPipeOutdir initialized.')
 
     @functools.cached_property
     def cosmo(self):
@@ -1139,3 +1143,46 @@ class KszPipeOutdir:
         pvv = np.sum(params_vel[None, :, None, :] * pvv, axis=1) # shape (nsurr, #fields, nkbins)
         pvv = field[1][0] * pvv[:, idx_vr_21,:] + field[1][1] * pvv[:, idx_vr_22,:]      # shape (nsurr, #params_vel, nkbins)
         return np.sum(params_vel[None, :, :] * pvv, axis=1)  # shape (nsurr, nkbins)
+
+
+class CombineKszPipeOutdir(KszPipeOutdir):
+    """Class to combine two KszPipeOutdir objects, with a weight w1 for the first one and (1-w1) for the second one."""
+    def __init__(self, out1, out2, w1=0.5):
+
+        for key in ['binning', 'k', 'nkbins', 'kmin', 'kmax', 'kstep', 'cmb_fields', 'spin_gal', 'spin_vr', 'data_fields', 'surr_fields', 'sim_surr_fg', 'suff_gal_list', 'suff_vel_list', 'p', 'f', 'nsurr', 'nsurr_fields']:
+            # because they do not have all the type, ect I will assume that they are the same between out1 and out2
+            # assert getattr(out1, key) == getattr(out2, key), f"The attribute '{key}' must be the same for both out1 and out2"
+            setattr(self, key, getattr(out1, key))
+
+
+        w_ini = w1 if isinstance(w1, float) else 0.5
+        w1_data = w_ini * np.ones((len(out1.data_fields), len(out1.data_fields)))
+        w1_surr = w_ini * np.ones((len(out1.surr_fields), len(out1.surr_fields)))
+        if not isinstance(w1, float):
+            for key, val in w1.items():
+                kk1, kk2 = key.split('-')
+                # data:
+                for i in range(len(out1.data_fields)):
+                    for j in range(len(out1.data_fields)):
+                        totest1 = list(out1.data_fields.keys())[i].split('-')[0]
+                        totest2 = list(out1.data_fields.keys())[j].split('-')[0]
+                        if (kk1 == totest1 and kk2 == totest2) or (kk2 == totest1 and kk1 == totest2):
+                            w1_data[i, j] = val
+                # surr:
+                for i in range(len(out1.surr_fields)):
+                    for j in range(len(out1.surr_fields)):
+                        totest1 = list(out1.surr_fields.keys())[i].split('-')[0]
+                        totest2 = list(out1.surr_fields.keys())[j].split('-')[0]
+                        if (kk1 == totest1 and kk2 == totest2) or (kk2 == totest1 and kk1 == totest2):
+                            w1_surr[i, j] = val
+                            
+        # print(w1_data, w1_surr)
+        print(w1_data)
+        print(w1_surr)
+
+        self.pk_data = [w1_data[:,:,None]*out1.pk_data[i] + (1 - w1_data)[:,:,None]*out2.pk_data[i] for i in range(len(out1.pk_data))]
+        self.pk_surr = [w1_surr[None,:,:,None]*out1.pk_surr[i] + (1 - w1_surr)[None,:,:,None]*out2.pk_surr[i] for i in range(len(out1.pk_surr))]
+
+        # Compute the mean and the covariances for the combination !
+        self._precompute_mean_and_cov()
+        print('CombineKszPipeOutdir initialized.')

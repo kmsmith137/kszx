@@ -691,3 +691,15 @@ def cross_covariance(X: np.ndarray, Y: np.ndarray) -> np.ndarray:
         raise ValueError("X and Y must have the same number of samples (rows).")
 
     return ((X - np.mean(X, axis=0)).T @ (Y - np.mean(Y, axis=0))) / (X.shape[0] - 1)
+
+
+def setup_mplstyle():
+    """Load the default kszx style for matplotlib"""
+    # you may need to load tex with `module load texlive`
+    from matplotlib import pyplot as plt
+
+    # I don't know what is going on with getdist .. I need to load matplotlib inline after the import of getdist, so I load it here..
+    from getdist import MCSamples, plots
+
+    plt.style.use(os.path.join(os.path.abspath(os.path.dirname(__file__)), 'kszx_style.mplstyle'))
+

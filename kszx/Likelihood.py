@@ -229,7 +229,8 @@ class BaseLikelihood:
         """ Read mcmc already run """
         self.samples = np.load(fn_chain)
 
-    def show_mcmc(self, params=None, add_expected_value=True, params_fid=None, add_chains=None, legend_label=None, colors=None, fig_width_inch=5, title_limit=None, fn_fig=None):
+    def show_mcmc(self, params=None, add_expected_value=True, params_fid=None, add_chains=None, 
+                  legend_label=None, colors=None, fig_width_inch=5, title_limit=None, fn_fig=None):
         r"""Makes a corner plot from MCMC results. Intended to be called from jupyter."""
 
         if not hasattr(self, 'gdsamples'):
@@ -298,18 +299,6 @@ class BaseLikelihood:
                 s = f'  ({(val-quantiles[2]):+.03f})' if (q != 0.5) else ''
                 print(f'{(100*q):.03f}% quantile: {val=:.03f}{s}')
 
-            print(f'\nSNR: {self.compute_snr():.03f}')
-
-    def compute_snr(self, params=None):
-        r"""Returns total SNR at the bestfit parameters. 
-            # This is not the definition used previoulsy, do we want to change ? """
-        
-        if params is None: params = self.bestfit
-        if isinstance(params, list): params = {key: params[i] for i, key in enumerate(self.params)}
-        mean, cov = self.mean_and_cov(**params)
-
-        return np.sqrt(np.dot(mean, np.linalg.solve(cov, mean)))
-
     def analyze_chi2(self, params=None, ddof=None):
         r"""Computes a $\chi^2$ statistic, which compares data to model with given set of parameters.
 
@@ -320,19 +309,23 @@ class BaseLikelihood:
         The ``ddof`` argument is used to compute the number of degrees of freedom, as
         ``ndof = nkbins - ddof``. If ``ddof=None``, then it will be equal to the
         number of nonzero (fnl, bias) params. (This is usually the correct choice.)
+
+        Warning: Do not include percival factor in the covariance.
         """
 
         if params is None: params = self.bestfit
         if isinstance(params, list): params = {key: params[i] for i, key in enumerate(self.params)}
         
-        mean, cov = self.mean_and_cov(**params)
+        mean, cov = self.mean_and_cov(**params, force_compute_cov=True)
+        if hasattr(self, 'percival_factor'):
+            cov = cov / self.percival_factor  # remove percival factor applied in mean_and_cov.
         if ddof is None: ddof = len(params)
         
         x = self.data - mean
         chi2 = np.dot(x, np.linalg.solve(cov,x))
         ndof = self.data.size - ddof
         pte = scipy.stats.chi2.sf(chi2, ndof)
-        snr = self.compute_snr(params)
+        snr = np.sqrt(np.dot(mean, np.linalg.solve(cov, mean)))
         
         return {'chi2': float(chi2), 'ndof': int(ndof), 'red_chi2': float(chi2 / ndof), 'snr': float(snr), 'pte': float(pte)}
 
@@ -345,12 +338,16 @@ class Likelihood(BaseLikelihood):
                  first_kbin={'gv': None}, last_kbin={'gv': None}, jeffreys_prior=False,
                  cov_fix_params=False, params_cov=None, cov_correction='hartlap-percival', 
                  cov_interp=False, interp_method='linear'):
-        r""" TODO. 
-        
-        name_params should be in params !
-        
-        first_kbin and last_kbin should have the same key entries than fields. --> data[first_kbin, last_kbin] if None, None, use all the data vector !
-        
+        r""" 
+        pout: KszPipeOutdir object. 
+        params: dictionary of parameters to vary in the inference. Each parameter should have a 'ref' value, a 'prior' range and a 'latex' label for plotting. 
+                Optionally, an 'interp' range can be provided for interpolation of the covariance matrix.
+        fields: dictionary of fields to include in the likelihood ('gg', 'gv', 'vv'). For each field you need to provide a dictionary with the entries to call  
+                pout.pgg_mean() / pout.pgv_mean() ... ('gv': 'freq', 'field', 'ell') and all field have 'name_params'. name_params should be a dictionary with the mapping between the parameter names used in the KszPipeOutdir methods and the parameter names used in the inference (i.e. in params). If you want to fix some parameters to a given value, you can provide a 'fix_params' entry with a dictionary of the parameters to fix and their values. For example, 'fix_params': {'bv': 1.0} will fix bv to 1.0 in the likelihood evaluation.
+        first_kbin, last_kbin: dictionary with the same key entries than fields.
+        jeffreys_prior: if True, include the Jeffreys prior in the likelihood. Not ready yet.
+
+        cov_correction can be 'hartlap', 'percival', 'hartlap-percival' or None. WARNING: percival correction should not be applied when the chi2 is computed.
         """
         assert isinstance(pout, KszPipeOutdir)
 
@@ -397,19 +394,20 @@ class Likelihood(BaseLikelihood):
                 sys.exit(2)
         self.data = np.concatenate(data)
 
-        self.factor_cov_correction = 1.0
+        self.hartlap_factor, self.percival_factor = 1.0, 1.0
         if 'hartlap' in cov_correction:
             # See: https://arxiv.org/abs/astro-ph/0608064
-            hartlap_factor = ((self.pout.nsurr - self.data.size - 2) / (self.pout.nsurr - 1))**(-1)
-            print(f'Using Hartlap correction for covariance: {hartlap_factor=}')
-            self.factor_cov_correction *= hartlap_factor
+            self.hartlap_factor = ((self.pout.nsurr - self.data.size - 2) / (self.pout.nsurr - 1))**(-1)
+            print(f'Using Hartlap correction for covariance: {self.hartlap_factor=}')
         if 'percival' in cov_correction:
-            # See: https://arxiv.org/pdf/1312.4841
+            # See: https://arxiv.org/pdf/1312.4841.
             A = 2 / ((self.pout.nsurr - self.data.size - 1)*(self.pout.nsurr - self.data.size - 4))
-            B = (self.pout.nsurr - self.data.size - 2) / ((self.pout.nsurr - self.data.size - 1)*(self.pout.nsurr - self.data.size - 4))  
-            percival_factor = (1 + B*(self.data.size - len(self.params))) / (1 + A + B*(len(self.params) - 1))
-            print(f'Using Percival correction for covariance: {percival_factor=}')
-            self.factor_cov_correction *= percival_factor
+            B = (self.pout.nsurr - self.data.size - 2) / ((self.pout.nsurr - self.data.size - 1)*(self.pout.nsurr - self.data.size - 4))
+            self.percival_factor = (1 + B*(self.data.size - len(self.params))) / (1 + A + B*(len(self.params) - 1))
+            print(f'Using Percival correction for covariance: {self.percival_factor=}')
+        # WARNING: percival_factor should NOT be applied when computing the SNR/chi2/...
+        self.factor_cov_correction = self.hartlap_factor * self.percival_factor
+        print(f'Total factor applied to the covariance matrix: {self.factor_cov_correction=}')
 
         self.cov_fix_params = cov_fix_params  # Speed up the mcmc by using covariance at fiducial value of the parameters.
         self.cov_interp = cov_interp
@@ -438,7 +436,7 @@ class Likelihood(BaseLikelihood):
             self.cov_cholesky_interp = lambda pp: utils.unflatten_cholesky(cov_choleskk_interp(pp), dim=self.k.size)
 
     def mean_and_cov(self, force_compute_cov=False, return_cov=True, return_grad=False, **params):
-        r""" TODO. """
+        r""" Computes the model prediction and covariance matrix for the given parameters from the surrogates."""
 
         mu = []
         for field in self.fields: 
@@ -525,9 +523,12 @@ class Likelihood(BaseLikelihood):
                 cov_grad = None
                 return mu, cov, mu_grad, cov_grad
 
-    def plot_data(self, params=None, add_bestfit=True, fn_fig=None):
+    def plot_data(self, params=None, add_bestfit=True, remove_shotnoise=False, fn_fig=None, return_fig=False):
         """ """
-        # Compute theory predicition:
+        
+        data = self.data
+
+        # Compute theory predicition:    
         bestfit = self.mean_and_cov(**self.bestfit)[0] if add_bestfit else None
         theory = self.mean_and_cov(**params)[0] if params is not None else None
 
@@ -542,9 +543,22 @@ class Likelihood(BaseLikelihood):
                 err = np.sqrt(np.diag(cov))
             else: 
                 print('no error display')
-                err = np.zeros(self.data)
+                err = np.zeros_like(data)
         
-        plt.figure(figsize=(3.5*len(self.fields) + 1, 3))
+        if remove_shotnoise:
+            # Zero all parameters except those related to shotnoise:
+            params_shotnoise = params.copy() if params is not None else self.bestfit.copy()
+            for key in params_shotnoise:
+                if not (('sn' in key) or ('snv' in key)):    
+                    params_shotnoise[key] = 0.0
+
+            # remove shotnoise: 
+            shotnoise = self.mean_and_cov(**params_shotnoise)[0]
+            data = data - shotnoise
+            if bestfit is not None: bestfit = bestfit - shotnoise
+            if theory is not None: theory = theory - shotnoise
+
+        plt.figure(figsize=(2.7*len(self.fields) + 1, 2.7))
         for i, key in enumerate(self.fields):
             plt.subplot(1, len(self.fields), 1+i)
 
@@ -556,7 +570,7 @@ class Likelihood(BaseLikelihood):
             else:
                 k_power = 2
 
-            plt.errorbar(self.k[start:end], self.k[start:end]**k_power*self.data[start:end], self.k[start:end]**k_power*err[start:end], ls='', marker='.', label='data', zorder=10)
+            plt.errorbar(self.k[start:end], self.k[start:end]**k_power*data[start:end], self.k[start:end]**k_power*err[start:end], ls='', marker='.', label='data', zorder=10)
             if add_bestfit: plt.plot(self.k[start:end], self.k[start:end]**k_power*bestfit[start:end], label='bestfit', ls='--', c='r', zorder=0)
             if params is not None: plt.plot(self.k[start:end], self.k[start:end]**k_power*theory[start:end], ls=':', c='orange', zorder=1)
 
@@ -572,16 +586,19 @@ class Likelihood(BaseLikelihood):
                 else:
                     plt.ylabel(r'$k P^{gv}_{\ell=1}$ [Mpc$^2$]')
             else:
-                plt.ylabel(r'$k^2P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'}$ $[Mpc^3]$')
-                plt.xscale('log')
+                plt.ylabel(r'$k^2P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'}$ [Mpc]')
+                #plt.xscale('log')
                 plt.yscale('log')
             plt.xlabel('$k$ [Mpc$^{-1}$]')
             plt.legend()
         plt.tight_layout()
         if fn_fig is not None: plt.savefig(fn_fig)
-        plt.show()
+        if return_fig: 
+            return plt.gcf()
+        else:
+            plt.show()
 
-    def plot_residuals(self, params=None, fn_fig=None):
+    def plot_residuals(self, params=None, nsigma=2.4, fn_fig=None, return_fig=False):
         """ """
         # Compute theory predicition:
         params = self.bestfit if params is None else params
@@ -590,7 +607,7 @@ class Likelihood(BaseLikelihood):
         cov = self.mean_and_cov(force_compute_cov=True, **params)[1]
         err = np.sqrt(np.diag(cov))
 
-        plt.figure(figsize=(3.5*len(self.fields) + 1, 3))
+        plt.figure(figsize=(2.7*len(self.fields) + 1, 2.7))
         for i, key in enumerate(self.fields):
             plt.subplot(1, len(self.fields), 1+i)
 
@@ -609,19 +626,23 @@ class Likelihood(BaseLikelihood):
                     plt.ylabel(r'$\Delta P^{gv}_{\ell=1} / \sigma$')
             else:
                 plt.ylabel(r'$\Delta P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'} / \sigma$')
-                plt.xscale('log')
+                #plt.xscale('log')
 
             plt.axhline(2, color='grey', ls='--', lw=1, zorder=0)
             plt.axhline(0, color='k', ls='-', lw=1, zorder=0)
             plt.axhline(-2, color='grey', ls='--', lw=1, zorder=0)
 
             plt.xlabel('$k$ [Mpc$^{-1}$]')
-            
+            plt.ylim(-nsigma, nsigma)
+
         plt.tight_layout()
         if fn_fig is not None: plt.savefig(fn_fig)
-        plt.show()
+        if return_fig: 
+            return plt.gcf()
+        else:
+            plt.show()
 
-    def plot_cov(self, params=None, nticks=5, fn_fig=None):
+    def plot_cov(self, params=None, nticks=5, fn_fig=None, return_fig=False):
         """ """
         from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -649,9 +670,12 @@ class Likelihood(BaseLikelihood):
         plt.colorbar(im, cax=cax, label=r'$\log(\vert cov \vert)$')
         plt.tight_layout()
         if fn_fig is not None: plt.savefig(fn_fig)
-        plt.show()
+        if return_fig: 
+            return plt.gcf()
+        else:
+            plt.show()
 
-    def plot_corr(self, params=None, nticks=5, fn_fig=None):
+    def plot_corr(self, params=None, nticks=5, fn_fig=None, return_fig=False):
         """ """
         from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -686,286 +710,32 @@ class Likelihood(BaseLikelihood):
         plt.colorbar(im, cax=cax, label=r'R')
         plt.tight_layout()
         if fn_fig is not None: plt.savefig(fn_fig)
-        plt.show()
-
-
-class CombineRegionLikelihood(Likelihood):
-    def __init__(self, lik1, lik2, f1=None, params_for_f=None, cov_fix_params=None, params_cov=None):
-
-        assert np.all(lik1.k == lik2.k), "k bins must be the same for both likelihoods"
-        self.k = lik1.k
-        self.nk = lik1.nk
-        assert lik1.fields == lik2.fields, "Fields must be the same for both likelihoods"
-        self.fields = lik1.fields
-        assert lik1.params == lik2.params, "Parameters must be the same for both likelihoods"
-        self.params = lik1.params
-        assert lik1.jeffreys_prior == lik2.jeffreys_prior, "Jeffreys priors must be the same for both likelihoods"
-        self.jeffreys_prior = lik1.jeffreys_prior
-
-        self.lik1 = lik1
-        self.lik2 = lik2
-
-        if f1 is None:
-            if params_for_f is None:
-                print('Warning: f1 and params_for_f are not provided, using default values of 0.5 for both likelihoods and for each fields. Otherwise, provide params_for_f..')
-                f1, f2 = np.array([0.5]*np.sum(self.nk)), np.array([0.5]*np.sum(self.nk))
-            else:
-                print('Compute f1 for each fields as 1 / (1 + np.mean((np.diag(cov1) / np.diag(cov2))))')
-                _, cov1 = lik1.mean_and_cov(**params_for_f)
-                _, cov2 = lik2.mean_and_cov(**params_for_f)
-                f1 = [1 / (1 + np.mean(np.diag(cov1)[sum(self.nk[:i]):sum(self.nk[:i+1])] / np.diag(cov2)[sum(self.nk[:i]):sum(self.nk[:i+1])])) for i in range(len(self.fields))]
-                print(f"{f1=}")
-                f1 = np.array(np.concatenate([[f]*self.nk[i] for i, f in enumerate(f1)]))
-                f2 = 1 - f1
-        else: 
-            assert type(f1) is not float, 'f1 should be a list of lenght equal to the number of fields, for automatic computation pass f1=None' 
-            f1 = np.array(np.concatenate([[f]*self.nk[i] for i, f in enumerate(f1)]))
-            f2 = 1 - f1
-
-        self.f1, self.f2 = f1, f2
-        self.f1_cov, self.f2_cov = self.f1[:,None]*self.f1[None,:], self.f2[:,None]*self.f2[None,:]
-
-        if cov_fix_params is None:
-            assert lik1.cov_fix_params == lik2.cov_fix_params, "cov_fix_params must be the same for both likelihoods"
-            self.cov_fix_params = lik1.cov_fix_params 
+        if return_fig: 
+            return plt.gcf()
         else:
-            # Usefull if I want to fix the covariance parameters for the combined likelihood, but not for the individual likelihoods.
-            self.cov_fix_params = cov_fix_params
-        if self.cov_fix_params: 
-            if cov_fix_params is None:
-                assert np.all(lik1.params_cov == lik2.params_cov), "params_cov must be the same for both likelihoods"
-                self.cov = self.f1_cov*lik1.cov + self.f2_cov*lik2.cov
-            else:
-                self.cov = self.f1_cov*lik1.mean_and_cov(**params_cov, force_compute_cov=True)[1] + self.f2_cov*lik2.mean_and_cov(**params_cov, force_compute_cov=True)[1]
-            self.cov_inv = np.linalg.inv(self.cov)
-            self.logdet_cov = np.linalg.slogdet(self.cov)[1]
-            # cholesky decomposition is faster (for large matrix) than linalg.inv !
-            self.cov_cholesky = np.linalg.cholesky(self.cov)
+            plt.show()
 
-        assert lik1.cov_interp == lik2.cov_interp, "cov_interp must be the same for both likelihoods"
-        assert lik1.interp_method == lik2.interp_method, "interp_method must be the same for both likelihoods"
-        self.cov_interp, self.interp_method = lik1.cov_interp, lik1.interp_method
-        if not self.cov_fix_params and self.cov_interp: 
-            logdet_interp, cov_choleskk_interp = self.interpolate_cholesky(method=interp_method)
-            self.logdet_interp = logdet_interp
-            self.cov_cholesky_interp = lambda pp: utils.unflatten_cholesky(cov_choleskk_interp(pp), dim=self.k.size)
 
-        assert lik1.factor_cov_correction == lik2.factor_cov_correction, "factor_cov_correction must be the same for both likelihoods (hints: use same number of surrogates for both likelihoods)"
-        #In this case, factor_cov_correction is the same for the combine likelihoods than for the two likelihoods, so we can just leave as it is.
-        #self.factor_cov_correction = lik1.factor_cov_correction
+class CombineTracerLikelihood(Likelihood):
+    def __init__(self, *likelihoods):
+        """ Sum the different likelihoods, neglecting any correlation between them."""
 
-        self.data = self.f1*lik1.data + self.f2*lik2.data
+        print('ON NE S4EMBETER EN CONCATENANT les data vectoes ect on somme juste les likelihood s!!! ')
+        print('NON NON OK le faire ca serav plus simple !!!! ')
+        print('CA SERT PRET POUR FAIRE UNE CROSS CORELATION LRG x QSO par exemple ect... ')
+
+        self.data = np.concatenate([lik.data for lik in likelihoods])
 
     def mean_and_cov(self, force_compute_cov=False, return_cov=True, return_grad=False, **params): 
-        if return_grad:
-            print('Not ready yet')
-            sys.exit(31)
-
-        to_unpack1 = self.lik1.mean_and_cov(force_compute_cov=force_compute_cov, return_cov=return_cov, return_grad=return_grad, **params)
-        to_unpack2 = self.lik2.mean_and_cov(force_compute_cov=force_compute_cov, return_cov=return_cov, return_grad=return_grad, **params)
-
-        if return_cov:
-            mean1, cov1 = to_unpack1
-            mean2, cov2 = to_unpack2
-            mean = self.f1*mean1 + self.f2*mean2
-            cov = self.f1_cov*cov1 + self.f2_cov*cov2
-            return mean, cov
-
-        else:
-            mean1, mean2 = to_unpack1, to_unpack2
-            mean = self.f1*mean1 + self.f2*mean2
-            return mean
+        print('Not ready yet')
 
 
-class FieldLevelLikelihood(BaseLikelihood):
-    """ Likelihood for field level (density / velocity) inference. """
+""" DEVELOPMENT ..."""
 
-    def __init__(self, pout, 
-                 params={'bv90': {'ref': 0, 'prior': [0, 2], 'latex': r'$b_v^{90}$'}},
-                 fields={'v_90': {'freq': ['90', '150'], 'field': [1, 0], 'ell': 1, 'name_params': {'bv': 'bv90'}}}, 
-                 first_kbin={'v_90': None}, last_kbin={'v_90': None}, jeffreys_prior=False, cov_correction='hartlap-percival'):
-        r"""
-        name_params should be in params !
-        first_kbin and last_kbin should have the same key entries than fields. --> data[first_kbin, last_kbin] if None, None, use all the data vector !
-        """
-        assert isinstance(pout, KszPipeOutdir)
-
-        # check if we have first_kbin and last_kbin for each field:
-        for name in fields: 
-            assert (name in first_kbin) and (name in last_kbin)
-
-        # check if parameters used for each field is defined in params:
-        for name in fields: 
-            for nn in fields[name]['name_params']:
-                assert fields[name]['name_params'][nn] in params
-
-        self.pout = pout
-        self.first_kbin = first_kbin
-        self.last_kbin = last_kbin
-        self.k = np.concatenate([pout.k[name[:2]][first_kbin[name]:last_kbin[name]] for name in fields])
-        self.nk = [pout.k[name[:2]][first_kbin[name]:last_kbin[name]].size for name in fields]
-        self.fields = fields
-
-        self.params = params
-        for field in fields:
-            for name in fields[field]['name_params'].values(): 
-                assert name in params
-
-        self.jeffreys_prior = jeffreys_prior
-        if jeffreys_prior:
-            print('ERROR: jeffreys_prior is not ready yet')
-            sys.exit(8)
-
-        data = []
-        for field in self.fields: 
-            field_split = field.split('_')
-            ff = self.fields[field].copy()
-            _ = ff.pop('name_params')
-            if 'fix_params' in ff: _ = ff.pop('fix_params')
-            if field_split[0] == 'g':
-                data += [self.pout.g_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
-            elif field_split[0] == 'v':
-                data += [self.pout.pv_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
-            else:
-                print(f"{field_split} in not in gg, gv, vv")
-                sys.exit(2)
-        self.data = np.concatenate(data)
-
-        self.factor_cov_correction = 1.0
-        if 'hartlap' in cov_correction:
-            # See: https://arxiv.org/abs/astro-ph/0608064
-            hartlap_factor = ((self.pout.nsurr - self.data.size - 2) / (self.pout.nsurr - 1))**(-1)
-            print(f'Using Hartlap correction for covariance: {hartlap_factor=}')
-            self.factor_cov_correction *= hartlap_factor
-        if 'percival' in cov_correction:
-            # See: https://arxiv.org/pdf/1312.4841
-            A = 2 / ((self.pout.nsurr - self.data.size - 1)*(self.pout.nsurr - self.data.size - 4))
-            B = (self.pout.nsurr - self.data.size - 2) / ((self.pout.nsurr - self.data.size - 1)*(self.pout.nsurr - self.data.size - 4))  
-            percival_factor = (1 + B*(self.data.size - len(self.params))) / (1 + A + B*(len(self.params) - 1))
-            print(f'Using Percival correction for covariance: {percival_factor=}')
-            self.factor_cov_correction *= percival_factor
-
-        self.cov_fix_params = cov_fix_params  # Speed up the mcmc by using covariance at fiducial value of the parameters.
-        self.cov_interp = cov_interp
-        self.interp_method = interp_method
-
-        if cov_fix_params:
-            print(f'Precompute the covariance matrix with {params_cov=}')
-            self.params_cov = params_cov
-            _, cov = self.mean_and_cov(force_compute_cov=True, **params_cov)
-            self.cov = cov
-            self.cov_inv = np.linalg.inv(cov)
-            self.logdet_cov = np.linalg.slogdet(cov)[1]
-            # cholesky decomposition is faster (for large matrix) than linalg.inv !
-            self.cov_cholesky = np.linalg.cholesky(cov)
-        
-        if not cov_fix_params and cov_interp: 
-            print(f'Interpolate the Cholesky decomposition of the covariance matrix with RegularGridInterpolator and method={interp_method}')
-            # Check if the interp range is as wide as the prior range:
-            for name in self.params:
-                prior, interp = params[name]['prior'], params[name]['interp']
-                assert prior[0] >= interp[0], f'params[{name}]: {params[name]}'
-                assert prior[1] <= interp[1], f'params[{name}]: {params[name]}'
-
-            logdet_interp, cov_choleskk_interp = self.interpolate_cholesky(method=interp_method)
-            self.logdet_interp = logdet_interp
-            self.cov_cholesky_interp = lambda pp: utils.unflatten_cholesky(cov_choleskk_interp(pp), dim=self.k.size)
-
-    def mean_and_cov(self, force_compute_cov=False, return_cov=True, return_grad=False, **params):
-        r""" TODO. """
-
-        mu = []
-        for field in self.fields: 
-            field_split = field.split('_')
-            ff = self.fields[field].copy()
-
-            # use the value of the params to evaluate the theory:
-            name_params = ff.pop('name_params')
-            ff.update({nn: params[name_params[nn]] for nn in name_params})
-            # add chosen default value for some parameters
-            if 'fix_params' in ff:
-                fix_params = ff.pop('fix_params')
-                ff.update(fix_params)
-
-            if field_split[0] == 'gg':
-                mu += [self.pout.pgg_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
-            elif field_split[0] == 'gv':
-                mu += [self.pout.pgv_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
-            elif field_split[0] == 'vv':
-                mu += [self.pout.pvv_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
-        mu = np.concatenate(mu)
-
-        if not return_cov:
-            return mu
-        else:
-            if self.cov_fix_params and not force_compute_cov:
-                cov = self.cov
-            else:
-                cov = []
-                for field1 in self.fields: 
-                    field1_split = field1.split('_')
-                    for field2 in self.fields: 
-                        field2_split = field2.split('_')
-
-                        ff = {f"{key}1": value for key, value in self.fields[field1].items()}
-                        ff.update({f"{key}2": value for key, value in self.fields[field2].items()})
-
-                        # use the value of the params to evaluate the covariance:
-                        name_params1 = ff.pop('name_params1')
-                        ff.update({nn+'1': params[name_params1[nn]] for nn in name_params1})
-                        name_params2 = ff.pop('name_params2')
-                        ff.update({nn+'2': params[name_params2[nn]] for nn in name_params2})
-                        # add chosen default value for some parameters
-                        if 'fix_params1' in ff:
-                            fix_params = ff.pop('fix_params1')
-                            ff.update({nn+'1': fix_params[nn]for nn in fix_params})
-                        if 'fix_params2' in ff:
-                            fix_params = ff.pop('fix_params2')
-                            ff.update({nn+'2': fix_params[nn] for nn in fix_params})
-
-                        # not super elegant... 
-                        if field1_split[0] == 'gg':
-                            if field2_split[0] == 'gg':
-                                cov = [self.pout.pggxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
-                            elif field2_split[0] == 'gv':
-                                cov += [self.pout.pggxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
-                            elif field2_split[0] == 'vv':
-                                cov += [self.pout.pggxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
-                        elif field1_split[0] == 'gv':
-                            if field2_split[0] == 'gg':
-                                cov += [self.pout.pgvxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
-                            elif field2_split[0] == 'gv':
-                                cov += [self.pout.pgvxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
-                            elif field2_split[0] == 'vv':
-                                cov += [self.pout.pgvxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
-                        elif field1_split[0] == 'vv':
-                            if field2_split[0] == 'gg':
-                                cov += [self.pout.pvvxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
-                            elif field2_split[0] == 'gv':
-                                cov += [self.pout.pvvxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
-                            elif field2_split[0] == 'vv':
-                                cov += [self.pout.pvvxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
-                cov = np.block([[cov[i*len(self.fields) + j] for j in range(len(self.fields))] for i in range(len(self.fields))])
-            
-            cov = self.factor_cov_correction * cov  # apply the correction factor to the covariance matrix
-
-            if not return_grad:
-                return mu, cov
-
-            else:
-                print('NOT READY FOR NOW --> need to add dmu and dcov in KszPipeOutDir !')
-                sys.exit(3)
-                mu_grad = None
-                cov_grad = None
-                return mu, cov, mu_grad, cov_grad
-
+# class FieldLevelLikelihood(BaseLikelihood):
 
 # class NewLikelihood(Likelihood):
 #     def __init__(self, lik1, lik2):
-
-#         self.something = something
-
-        # if fix_cov: self.cov ... (pour le loglikelihood? non le reecrire ca sera plus facile ?!)
-
+#         print('Not ready yet')
 #     def mean_and_cov(self, force_compute_cov=False, return_cov=True, return_grad=False, **params): 
 #            return mean, cov

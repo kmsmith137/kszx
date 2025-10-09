@@ -229,7 +229,7 @@ class BaseLikelihood:
         """ Read mcmc already run """
         self.samples = np.load(fn_chain)
 
-    def show_mcmc(self, params=None, add_expected_value=True, params_fid=None, add_chains=None, 
+    def show_mcmc(self, params=None, add_expected_value=True, add_bestfit=True, params_fid=None, add_chains=None, 
                   legend_label=None, colors=None, fig_width_inch=5, title_limit=None, fn_fig=None):
         r"""Makes a corner plot from MCMC results. Intended to be called from jupyter."""
 
@@ -260,12 +260,13 @@ class BaseLikelihood:
             params = self.params if params is None else params
             # add expected value:
             params_fid = [self.params[name]['ref'] for name in params] if params_fid is None else params_fid
+            bestfit = [self.bestfit[name] for name in params] if (hasattr(self, 'bestfit') and add_bestfit) else None
             for i in range(len(params)):
                 for irow in range(i, len(params)):
                     if params_fid[i] is not None: g.subplots[irow, i].axvline(params_fid[i], color='grey', ls=(0, (2, 3)), lw=1)
                     if irow > i :
                         if params_fid[irow] is not None: g.subplots[irow, i].axhline(params_fid[irow], color='grey', ls=(0, (2, 3)), lw=1)
-
+                        if (bestfit is not None): g.subplots[irow, i].scatter(bestfit[i], bestfit[irow], marker='*', color='red')
         if fn_fig is not None: plt.savefig(fn_fig)
         plt.show()
 

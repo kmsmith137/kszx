@@ -907,8 +907,8 @@ class KszPipeOutdir:
                         if field1[0][i] == 0 or field1[1][j] == 0 or field2[0][k] == 0 or field2[1][l] == 0:
                             cov_tmp = np.zeros((self.nkbins[self.binning['vv']], self.nkbins[self.binning['vv']]))  # shape (nkbins, nkbins)
                         else:
-                            idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr1_1 for jj in idx_vr2_1])  # shape (len(idx_gal_1)*len(idx_vr1), ) 
-                            idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr1_2 for jj in idx_vr2_2])  # shape (len(idx_gal_2)*len(idx_vr2), )
+                            idx1 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr1_1 for jj in idx_vr1_2])  # shape (len(idx_gal_1)*len(idx_vr1), ) 
+                            idx2 = np.array([ii*self.nsurr_fields + jj for ii in idx_vr2_1 for jj in idx_vr2_2])  # shape (len(idx_gal_2)*len(idx_vr2), )
                             surr_cov = self.surr_cov[f"{self.binning['vv']}-{self.binning['vv']}"] # select the covariance for the right binning
                             cov_tmp = np.sum(coeff_cov * surr_cov[idx1][:, idx2, :, :].reshape(len(idx1)*len(idx2), self.nkbins[self.binning['vv']], self.nkbins[self.binning['vv']]), axis=0)  # shape (nkbins, nkbins)
                         cov += [cov_tmp]

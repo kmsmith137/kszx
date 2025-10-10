@@ -318,8 +318,7 @@ class BaseLikelihood:
         if isinstance(params, list): params = {key: params[i] for i, key in enumerate(self.params)}
         
         mean, cov = self.mean_and_cov(**params, force_compute_cov=True)
-        if hasattr(self, 'percival_factor'):
-            cov = cov / self.percival_factor  # remove percival factor applied in mean_and_cov.
+        if hasattr(self, 'percival_factor'): cov = cov / self.percival_factor  # remove percival factor applied in mean_and_cov.
         if ddof is None: ddof = len(params)
         
         x = self.data - mean

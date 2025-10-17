@@ -22,6 +22,15 @@ class BaseLikelihood:
         """
         raise NotImplementedError("This method should be implemented in subclasses.")
 
+    @staticmethod
+    def compute_derived_params(derived_params, params):
+        """ Compute derived parameters from a dictionary of formulas and a dictionary of parameters."""
+        derived = {}
+        for key, formula in derived_params.items():
+            # params dict must contain all referenced variables
+            derived[key] = eval(formula, {"np": np}, params)
+        return derived
+
     def uniform_log_prior(self, **params):
         for key in self.params:
             low, high = self.params[key]['prior']
@@ -229,8 +238,8 @@ class BaseLikelihood:
         """ Read mcmc already run """
         self.samples = np.load(fn_chain)
 
-    def show_mcmc(self, params=None, add_expected_value=True, add_bestfit=True, params_fid=None, add_chains=None, 
-                  legend_label=None, colors=None, fig_width_inch=5, title_limit=None, fn_fig=None):
+    def show_mcmc(self, params=None, add_expected_value=True, add_bestfit=True, params_fid=None, add_marker=None,
+                add_chains=None, legend_label=None, colors=None, fig_width_inch=5, title_limit=None, fn_fig=None):
         r"""Makes a corner plot from MCMC results. Intended to be called from jupyter."""
 
         if not hasattr(self, 'gdsamples'):
@@ -261,12 +270,14 @@ class BaseLikelihood:
             # add expected value:
             params_fid = [self.params[name]['ref'] for name in params] if params_fid is None else params_fid
             bestfit = [self.bestfit[name] for name in params] if (hasattr(self, 'bestfit') and add_bestfit) else None
+            marker = [add_marker[name] for name in params] if (add_marker is not None) else None
             for i in range(len(params)):
                 for irow in range(i, len(params)):
                     if params_fid[i] is not None: g.subplots[irow, i].axvline(params_fid[i], color='grey', ls=(0, (2, 3)), lw=1)
                     if irow > i :
                         if params_fid[irow] is not None: g.subplots[irow, i].axhline(params_fid[irow], color='grey', ls=(0, (2, 3)), lw=1)
                         if (bestfit is not None): g.subplots[irow, i].scatter(bestfit[i], bestfit[irow], marker='*', color='red')
+                        if (marker is not None): g.subplots[irow, i].scatter(marker[i], marker[irow], marker='*', color='black')
         if fn_fig is not None: plt.savefig(fn_fig)
         plt.show()
 
@@ -383,6 +394,7 @@ class Likelihood(BaseLikelihood):
             ff = self.fields[field].copy()
             _ = ff.pop('name_params')
             if 'fix_params' in ff: _ = ff.pop('fix_params')
+            if 'derived_params' in ff: _ = ff.pop('derived_params')
             if field_split[0] == 'gg':
                 data += [self.pout.pgg_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
             elif field_split[0] == 'gv':
@@ -450,6 +462,11 @@ class Likelihood(BaseLikelihood):
             if 'fix_params' in ff:
                 fix_params = ff.pop('fix_params')
                 ff.update(fix_params)
+            # add params that are derived from others:
+            if 'derived_params' in ff:
+                derived_params = ff.pop('derived_params')
+                derived = self.compute_derived_params(derived_params, params)
+                ff.update(derived)
 
             if field_split[0] == 'gg':
                 mu += [self.pout.pgg_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
@@ -486,6 +503,14 @@ class Likelihood(BaseLikelihood):
                         if 'fix_params2' in ff:
                             fix_params = ff.pop('fix_params2')
                             ff.update({nn+'2': fix_params[nn] for nn in fix_params})
+                        if 'derived_params1' in ff:
+                            derived_params = ff.pop('derived_params1')
+                            derived = self.compute_derived_params(derived_params, params)
+                            ff.update({nn+'1': derived[nn]for nn in derived_params})
+                        if 'derived_params2' in ff:
+                            derived_params = ff.pop('derived_params2')
+                            derived = self.compute_derived_params(derived_params, params)
+                            ff.update({nn+'2': derived[nn]for nn in derived_params})
 
                         # not super elegant... 
                         if field1_split[0] == 'gg':
@@ -525,7 +550,6 @@ class Likelihood(BaseLikelihood):
 
     def plot_data(self, params=None, add_bestfit=True, remove_shotnoise=False, fn_fig=None, return_fig=False):
         """ """
-        
         data = self.data
 
         # Compute theory predicition:    
@@ -714,20 +738,53 @@ class Likelihood(BaseLikelihood):
             return plt.gcf()
         else:
             plt.show()
-
+            
 
 class CombineTracerLikelihood(Likelihood):
     def __init__(self, *likelihoods):
-        """ Sum the different likelihoods, neglecting any correlation between them."""
+        """ Sum the different likelihoods, neglecting the cross-correlation between them ! """
 
-        print('ON NE S4EMBETER EN CONCATENANT les data vectoes ect on somme juste les likelihood s!!! ')
-        print('NON NON OK le faire ca serav plus simple !!!! ')
-        print('CA SERT PRET POUR FAIRE UNE CROSS CORELATION LRG x QSO par exemple ect... ')
+        self.likelihoods = likelihoods
 
-        self.data = np.concatenate([lik.data for lik in likelihoods])
+        self.fields = {}
+        for lik in self.likelihoods: self.fields.update(lik.fields)
 
+        self.params = {}
+        for lik in self.likelihoods: self.params.update(lik.params)
+
+        self.nk = np.concatenate([lik.nk for lik in self.likelihoods])
+        self.k = np.concatenate([lik.k for lik in self.likelihoods])
+        
+        self.data = np.concatenate([lik.data for lik in self.likelihoods])
+
+        self.cov_fix_params = all([lik.cov_fix_params for lik in self.likelihoods])
+        self.jeffreys_prior = all([lik.jeffreys_prior for lik in self.likelihoods])
+
+        if self.cov_fix_params:
+            self.cov = scipy.linalg.block_diag(*[lik.cov for lik in self.likelihoods])
+            #self.cov_inv = np.linalg.inv(self.cov)
+            self.logdet_cov = np.linalg.slogdet(self.cov)[1]
+            self.cov_cholesky = np.linalg.cholesky(self.cov)
+ 
     def mean_and_cov(self, force_compute_cov=False, return_cov=True, return_grad=False, **params): 
-        print('Not ready yet')
+        mean, cov, grad = [], [], []
+        for lik in self.likelihoods:
+            to_unpack = lik.mean_and_cov(force_compute_cov=force_compute_cov, return_cov=return_cov, return_grad=return_grad, **params)
+            if not return_cov and not return_grad: 
+                mean.append(to_unpack)
+            else:
+                mean.append(to_unpack[0])
+            if return_cov:  cov.append(to_unpack[1])
+            if return_grad: grad.append(to_unpack[2])
+
+        if not return_cov and not return_grad:
+            return np.concatenate(mean)
+        elif return_cov and not return_grad:
+            return np.concatenate(mean), scipy.linalg.block_diag(*cov)
+        else:
+            import sys 
+            print('NOT IMPLEMENTED YET')
+            sys.exit(1)
 
 
 """ DEVELOPMENT ..."""

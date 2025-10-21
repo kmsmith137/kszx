@@ -239,7 +239,7 @@ class BaseLikelihood:
         self.samples = np.load(fn_chain)
 
     def show_mcmc(self, params=None, add_expected_value=True, add_bestfit=True, params_fid=None, add_marker=None,
-                add_chains=None, legend_label=None, colors=None, fig_width_inch=5, title_limit=None, fn_fig=None):
+                  add_chains=None, legend_label=None, colors=None, fig_width_inch=5, title_limit=None, return_fig=False, fn_fig=None):
         r"""Makes a corner plot from MCMC results. Intended to be called from jupyter."""
 
         if not hasattr(self, 'gdsamples'):
@@ -279,7 +279,10 @@ class BaseLikelihood:
                         if (bestfit is not None): g.subplots[irow, i].scatter(bestfit[i], bestfit[irow], marker='*', color='red')
                         if (marker is not None): g.subplots[irow, i].scatter(marker[i], marker[irow], marker='*', color='black')
         if fn_fig is not None: plt.savefig(fn_fig)
-        plt.show()
+        if return_fig: 
+            return g
+        else:
+            plt.show()
 
     def show_table(self, sigfig=2, add_bestfit=False, fn_tab=None):
         from tabulate import tabulate
@@ -300,7 +303,13 @@ class BaseLikelihood:
                 utils.std_notation(lower-mean, sigfig) + "/" + utils.std_notation(upper-mean, sigfig)]] 
 
         print(tabulate(tab, headers="firstrow", tablefmt='rounded_outline'))
-        if fn_tab is not None: np.savetxt(tab, fn_tab)
+
+        if fn_tab is not None: 
+            with open(fn_tab, "w") as f:
+                f.write('Chi2 info: ' + ', '.join([f'{key}={value:2.3f}' for key, value in self.analyze_chi2().items()]) + '\n')
+                f.write('\n')
+                f.write(tabulate(tab, headers="firstrow", tablefmt='latex_booktabs'))
+
 
     def show_quantile(self):
         qlevels = [0.025, 0.16, 0.5, 0.84, 0.975]

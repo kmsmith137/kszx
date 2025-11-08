@@ -557,128 +557,143 @@ class Likelihood(BaseLikelihood):
                 cov_grad = None
                 return mu, cov, mu_grad, cov_grad
 
+    def snr_wo_noise(self):
+        """ Compute the SNR without noise. Useful to check if the non-noise signal is detected or not."""
+        # Zero all parameters except those related to shotnoise:
+        params_shotnoise = self.bestfit.copy()
+        for key in params_shotnoise:
+            if not (('sn' in key) or ('snv' in key)):    
+                params_shotnoise[key] = 0.0
+
+        # remove shotnoise: 
+        shotnoise = self.mean_and_cov(**params_shotnoise)[0]
+        mean, cov = self.mean_and_cov(**self.bestfit, force_compute_cov=True)
+        mean -= shotnoise
+
+        if hasattr(self, 'percival_factor'): cov = cov / self.percival_factor  # remove percival factor applied in mean_and_cov (percival needs to be applied only for the mcmc)
+
+        return float(np.sqrt(np.dot(mean, np.linalg.solve(cov, mean))))
+
     def plot_data(self, params=None, add_bestfit=True, remove_shotnoise=False, add_residuals=False, nsigma=3, fn_fig=None, return_fig=False):
-        """ """
-        data = self.data
+            """ """
+            data = self.data
 
-        # Compute theory predicition:    
-        bestfit = self.mean_and_cov(**self.bestfit)[0] if add_bestfit else None
-        theory = self.mean_and_cov(**params)[0] if params is not None else None
+            # Compute theory predicition:    
+            bestfit = self.mean_and_cov(**self.bestfit)[0] if add_bestfit else None
+            theory = self.mean_and_cov(**params)[0] if params is not None else None
 
-        # Compute the errors:
-        try: 
-            cov = self.mean_and_cov(force_compute_cov=True, **self.bestfit)[1]
-            err = np.sqrt(np.diag(cov))
-        except:
-            if params is not None: 
-                print(f'Use {params=}')
-                cov = self.mean_and_cov(force_compute_cov=True, **params)[1]
+            # Compute the errors:
+            try: 
+                cov = self.mean_and_cov(force_compute_cov=True, **self.bestfit)[1]
                 err = np.sqrt(np.diag(cov))
-            else: 
-                print('no error display')
-                err = np.zeros_like(data)
-        
-        if remove_shotnoise:
-            # Zero all parameters except those related to shotnoise:
-            params_shotnoise = params.copy() if params is not None else self.bestfit.copy()
-            for key in params_shotnoise:
-                if not (('sn' in key) or ('snv' in key)):    
-                    params_shotnoise[key] = 0.0
+            except:
+                if params is not None: 
+                    print(f'Use {params=}')
+                    cov = self.mean_and_cov(force_compute_cov=True, **params)[1]
+                    err = np.sqrt(np.diag(cov))
+                else: 
+                    print('no error display')
+                    err = np.zeros_like(data)
+            
+            if remove_shotnoise:
+                # Zero all parameters except those related to shotnoise:
+                params_shotnoise = params.copy() if params is not None else self.bestfit.copy()
+                for key in params_shotnoise:
+                    if not (('sn' in key) or ('snv' in key)):    
+                        params_shotnoise[key] = 0.0
 
-            # remove shotnoise: 
-            shotnoise = self.mean_and_cov(**params_shotnoise)[0]
-            data = data - shotnoise
-            if bestfit is not None: bestfit = bestfit - shotnoise
-            if theory is not None: theory = theory - shotnoise
-
-        if add_residuals:
-            fig, axs = plt.subplots(2, len(self.fields), figsize=(2.7*len(self.fields) + 1, 3.7), gridspec_kw={'height_ratios': [3, 1]}, sharex='col')
-        else: 
-            fig, axs = plt.subplots(1, len(self.fields), figsize=(2.7*len(self.fields) + 1, 2.7))
-
-        for i, key in enumerate(self.fields):
-            if len(self.fields) == 1:
-                ax = axs[0] if add_residuals else axs
-            else:
-                ax = axs[0,i] if add_residuals else axs[i]
-
-            start, end = np.sum(self.nk[:i], dtype='int'), np.sum(self.nk[:i+1], dtype='int')
-            if 'gg' in key:
-                k_power = 0
-            elif 'gv' in key:
-                k_power = 0 if self.fields[key]['ell'][1] == 0 else 1
-            else:
-                k_power = 1 if remove_shotnoise else 2
-
-            ax.errorbar(self.k[start:end], self.k[start:end]**k_power*data[start:end], self.k[start:end]**k_power*err[start:end], ls='', marker='.', label='data', zorder=10)
-            if add_bestfit: ax.plot(self.k[start:end], self.k[start:end]**k_power*bestfit[start:end], label='bestfit', ls='--', c='r', zorder=0)
-            if params is not None: ax.plot(self.k[start:end], self.k[start:end]**k_power*theory[start:end], ls=':', c='orange', zorder=1)
-
-            if 'gg' in key:
-                ax.set_ylabel(r'$P^{gg}_{\ell=0}$ [Mpc$^3$]')
-                ax.set_xscale('log')
-                ax.set_yscale('log')
-            elif 'gv' in key:
-                if self.fields[key]['ell'][1] == 0:
-                    ax.set_ylabel(r'$P^{gv}_{\ell=0}$ [Mpc$^3$]')
-                    ax.set_xscale('log')
-                    ax.set_yscale('log')
-                else:
-                    ax.set_ylabel(r'$k P^{gv}_{\ell=1}$ [Mpc$^2$]')
-            else:
-                if remove_shotnoise:
-                    ax.set_ylabel(r'$k P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'}$ [Mpc$^2$]')
-                else:
-                    ax.set_ylabel(r'$k^2P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'}$ [Mpc]')
-                    ax.set_yscale('log')
-
-            ax.yaxis.set_label_coords(-0.17, 0.5)
-            if not add_residuals: ax.set_xlabel('$k$ [Mpc$^{-1}$]')
-            if add_residuals: ax.set_xticks([])
-            ax.legend()
+                # remove shotnoise: 
+                shotnoise = self.mean_and_cov(**params_shotnoise)[0]
+                data = data - shotnoise
+                if bestfit is not None: bestfit = bestfit - shotnoise
+                if theory is not None: theory = theory - shotnoise
 
             if add_residuals:
-                if len(self.fields) == 1:
-                    ax = axs[1]
-                else:
-                    ax = axs[1,i]
+                fig, axs = plt.subplots(2, len(self.fields), figsize=(2.7*len(self.fields) + 1, 3.7), gridspec_kw={'height_ratios': [3, 1]}, sharex='col')
+            else: 
+                fig, axs = plt.subplots(1, len(self.fields), figsize=(2.7*len(self.fields) + 1, 2.7))
 
-                if add_bestfit: ax.plot(self.k[start:end], (data[start:end] - bestfit[start:end]) / err[start:end], ls=':', marker='.', zorder=10)
-                if params is not None: ax.plot(self.k[start:end], (data[start:end] - theory[start:end]) / err[start:end], ls=':', marker='.', zorder=10)
+            for i, key in enumerate(self.fields):
+                if len(self.fields) == 1:
+                    ax = axs[0] if add_residuals else axs
+                else:
+                    ax = axs[0,i] if add_residuals else axs[i]
+
+                start, end = np.sum(self.nk[:i], dtype='int'), np.sum(self.nk[:i+1], dtype='int')
+                if 'gg' in key:
+                    k_power = 0
+                elif 'gv' in key:
+                    k_power = 1
+                else:
+                    k_power = 1 if remove_shotnoise else 2
+
+                ax.errorbar(self.k[start:end], self.k[start:end]**k_power*data[start:end], self.k[start:end]**k_power*err[start:end], ls='', marker='.', label='data', zorder=10)
+                if add_bestfit: ax.plot(self.k[start:end], self.k[start:end]**k_power*bestfit[start:end], label='bestfit', ls='--', c='r', zorder=0)
+                if params is not None: ax.plot(self.k[start:end], self.k[start:end]**k_power*theory[start:end], ls=':', c='orange', zorder=1)
 
                 if 'gg' in key:
-                    ax.set_ylabel(r'$\Delta P^{gg}_{\ell=0} / \sigma$')
+                    ax.set_ylabel(r'$P^{gg}_{\ell=0}$ [Mpc$^3$]')
                     ax.set_xscale('log')
+                    ax.set_yscale('log')
                 elif 'gv' in key:
                     if self.fields[key]['ell'][1] == 0:
-                        ax.set_ylabel(r'$\Delta P^{gv}_{\ell=0} / \sigma$')
-                        ax.set_xscale('log')
+                        ax.set_ylabel(r'$k P^{gv}_{\ell=0}$ [Mpc$^2$]')
                     else:
-                        ax.set_ylabel(r'$\Delta P^{gv}_{\ell=1} / \sigma$')
-                        ax.set_xscale('linear')
+                        ax.set_ylabel(r'$k P^{gv}_{\ell=1}$ [Mpc$^2$]')
                 else:
-                    ax.set_ylabel(r'$\Delta P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'} / \sigma$')
-                    if remove_shotnoise: 
-                        ax.set_xscale('linear')
+                    if remove_shotnoise:
+                        ax.set_ylabel(r'$k P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'}$ [Mpc$^2$]')
                     else:
+                        ax.set_ylabel(r'$k^2P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'}$ [Mpc]')
+                        ax.set_yscale('log')
+
+                ax.yaxis.set_label_coords(-0.17, 0.5)
+                if not add_residuals: ax.set_xlabel('$k$ [Mpc$^{-1}$]')
+                if add_residuals: ax.set_xticks([])
+                ax.legend()
+
+                if add_residuals:
+                    if len(self.fields) == 1:
+                        ax = axs[1]
+                    else:
+                        ax = axs[1,i]
+
+                    if add_bestfit: ax.plot(self.k[start:end], (data[start:end] - bestfit[start:end]) / err[start:end], ls=':', marker='.', zorder=10)
+                    if params is not None: ax.plot(self.k[start:end], (data[start:end] - theory[start:end]) / err[start:end], ls=':', marker='.', zorder=10)
+
+                    if 'gg' in key:
+                        ax.set_ylabel(r'$\Delta P^{gg}_{\ell=0} / \sigma$')
                         ax.set_xscale('log')
+                    elif 'gv' in key:
+                        if self.fields[key]['ell'][1] == 0:
+                            ax.set_ylabel(r'$\Delta P^{gv}_{\ell=0} / \sigma$')
+                            ax.set_xscale('linear')
+                        else:
+                            ax.set_ylabel(r'$\Delta P^{gv}_{\ell=1} / \sigma$')
+                            ax.set_xscale('linear')
+                    else:
+                        ax.set_ylabel(r'$\Delta P^{vv}_{\ell=' + str(self.fields[key]['ell'][0]) +r',\ell=' + str(self.fields[key]['ell'][1]) + r'} / \sigma$')
+                        if remove_shotnoise: 
+                            ax.set_xscale('linear')
+                        else:
+                            ax.set_xscale('log')
 
-                ax.set_xlabel('$k$ [Mpc$^{-1}$]')
-                ax.axhline(2, color='lightgrey', ls='--', lw=1, zorder=-1)
-                ax.axhline(0, color='k', ls='-', lw=1, zorder=-1)
-                ax.axhline(-2, color='lightgrey', ls='--', lw=1, zorder=-1)
-                ax.set_ylim(-nsigma, nsigma)
-                ax.axhspan(-1, 1, alpha=0.3, color='lightgray', zorder=0)
+                    ax.set_xlabel('$k$ [Mpc$^{-1}$]')
+                    ax.axhline(2, color='lightgrey', ls='--', lw=1, zorder=-1)
+                    ax.axhline(0, color='k', ls='-', lw=1, zorder=-1)
+                    ax.axhline(-2, color='lightgrey', ls='--', lw=1, zorder=-1)
+                    ax.set_ylim(-nsigma, nsigma)
+                    ax.axhspan(-1, 1, alpha=0.3, color='lightgray', zorder=0)
 
-        #ax.set_ylabel('Label', loc='center')
-        ax.yaxis.set_label_coords(-0.17, 0.5)
+            #ax.set_ylabel('Label', loc='center')
+            ax.yaxis.set_label_coords(-0.17, 0.5)
 
-        plt.tight_layout(h_pad=0.5)
-        if fn_fig is not None: plt.savefig(fn_fig)
-        if return_fig: 
-            return fig
-        else:
-            plt.show()
+            plt.tight_layout(h_pad=0.5)
+            if fn_fig is not None: plt.savefig(fn_fig)
+            if return_fig: 
+                return fig
+            else:
+                plt.show()
 
     def plot_residuals(self, params=None, nsigma=2.4, fn_fig=None, return_fig=False):
         """ Plot only the residuals. """

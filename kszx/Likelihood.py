@@ -557,15 +557,18 @@ class Likelihood(BaseLikelihood):
                 cov_grad = None
                 return mu, cov, mu_grad, cov_grad
 
-    def snr_wo_noise(self):
+    def snr_wo_noise(self, remove_foregrounds=False):
         """ Compute the SNR without noise. Useful to check if the non-noise signal is detected or not."""
         # Zero all parameters except those related to shotnoise:
         params_shotnoise = self.bestfit.copy()
         for key in params_shotnoise:
-            if not (('sn' in key) or ('snv' in key)):    
-                params_shotnoise[key] = 0.0
-
-        # remove shotnoise: 
+            if remove_foregrounds:
+                if not (('sn' in key) or ('snv' in key) or ('bfg' in key)):    
+                    params_shotnoise[key] = 0.0
+            else:
+                if not (('sn' in key) or ('snv' in key)):    
+                    params_shotnoise[key] = 0.0
+        # remove shotnoise / foregrounds: 
         shotnoise = self.mean_and_cov(**params_shotnoise)[0]
         mean, cov = self.mean_and_cov(**self.bestfit, force_compute_cov=True)
         mean -= shotnoise
@@ -574,7 +577,7 @@ class Likelihood(BaseLikelihood):
 
         return float(np.sqrt(np.dot(mean, np.linalg.solve(cov, mean))))
 
-    def plot_data(self, params=None, add_bestfit=True, remove_shotnoise=False, add_residuals=False, nsigma=3, fn_fig=None, return_fig=False):
+    def plot_data(self, params=None, add_bestfit=True, remove_shotnoise=False, remove_foregrounds=False, add_residuals=False, nsigma=3, fn_fig=None, return_fig=False):
             """ """
             data = self.data
 
@@ -595,18 +598,24 @@ class Likelihood(BaseLikelihood):
                     print('no error display')
                     err = np.zeros_like(data)
             
-            if remove_shotnoise:
+            if remove_shotnoise or remove_foregrounds:
                 # Zero all parameters except those related to shotnoise:
-                params_shotnoise = params.copy() if params is not None else self.bestfit.copy()
-                for key in params_shotnoise:
-                    if not (('sn' in key) or ('snv' in key)):    
-                        params_shotnoise[key] = 0.0
+                params_to_remove = params.copy() if params is not None else self.bestfit.copy()
+                for key in params_to_remove:
+                    if remove_foregrounds:
+                        if remove_shotnoise and not (('sn' in key) or ('snv' in key) or ('bfg' in key)):
+                            params_to_remove[key] = 0.0
+                        elif not remove_shotnoise and not ('bfg' in key):
+                            params_to_remove[key] = 0.0
+                    else:
+                        if not (('sn' in key) or ('snv' in key)) :    
+                            params_to_remove[key] = 0.0
 
                 # remove shotnoise: 
-                shotnoise = self.mean_and_cov(**params_shotnoise)[0]
-                data = data - shotnoise
-                if bestfit is not None: bestfit = bestfit - shotnoise
-                if theory is not None: theory = theory - shotnoise
+                shotnoise_foreground = self.mean_and_cov(**params_to_remove)[0]
+                data = data - shotnoise_foreground
+                if bestfit is not None: bestfit = bestfit - shotnoise_foreground
+                if theory is not None: theory = theory - shotnoise_foreground
 
             if add_residuals:
                 fig, axs = plt.subplots(2, len(self.fields), figsize=(2.7*len(self.fields) + 1, 3.7), gridspec_kw={'height_ratios': [3, 1]}, sharex='col')
@@ -627,9 +636,12 @@ class Likelihood(BaseLikelihood):
                 else:
                     k_power = 1 if remove_shotnoise else 2
 
-                ax.errorbar(self.k[start:end], self.k[start:end]**k_power*data[start:end], self.k[start:end]**k_power*err[start:end], ls='', marker='.', label='data', zorder=10)
-                if add_bestfit: ax.plot(self.k[start:end], self.k[start:end]**k_power*bestfit[start:end], label='bestfit', ls='--', c='r', zorder=0)
-                if params is not None: ax.plot(self.k[start:end], self.k[start:end]**k_power*theory[start:end], ls=':', c='orange', zorder=1)
+                # Should be remove once the estimator in kSZPIPE is corrected:
+                correct_factor = (2*self.fields[key]['ell'][0] + 1) * (2*self.fields[key]['ell'][1] + 1)
+
+                ax.errorbar(self.k[start:end], correct_factor*self.k[start:end]**k_power*data[start:end], correct_factor*self.k[start:end]**k_power*err[start:end], ls='', marker='.', label='data', zorder=10)
+                if add_bestfit: ax.plot(self.k[start:end], correct_factor*self.k[start:end]**k_power*bestfit[start:end], label='bestfit', ls='--', c='r', zorder=0)
+                if params is not None: ax.plot(self.k[start:end], correct_factor*self.k[start:end]**k_power*theory[start:end], ls=':', c='orange', zorder=1)
 
                 if 'gg' in key:
                     ax.set_ylabel(r'$P^{gg}_{\ell=0}$ [Mpc$^3$]')

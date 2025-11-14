@@ -233,7 +233,8 @@ class KszPipe:
         wf = self.window_function[idx,:][:,idx] * w[:, None] * w[None, :]
 
         print('WARNING It lacks here the term in (2l+1) for p_gv(ell=1) !!!!! (no problem because it is the same between data and surrogate !!)')
-
+        print('WARNING FOR NOW WE JUST MULITPLY by (2l+1) inside the plotting function --> CHANGE THIS ONCE YOU MODIFY the PK ESTUMATION CODE !!!')
+        
         pks = []
         for i, kbin_edges in enumerate(self.kbin_edges):
             # Estimate power spectra. and normalize by dividing by window function.

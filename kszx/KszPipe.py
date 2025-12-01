@@ -230,7 +230,7 @@ class KszPipe:
 
         # Rescale window function (by roughly a factor Ngal/Nrand in each footprint).
         w = np.array(w)
-        wf = self.window_function[idx,:][:,idx] * w[:, None] * w[None, :]
+        self.wf = self.window_function[idx,:][:,idx] * w[:, None] * w[None, :]
 
         print('WARNING It lacks here the term in (2l+1) for p_gv(ell=1) !!!!! (no problem because it is the same between data and surrogate !!)')
         print('WARNING FOR NOW WE JUST MULITPLY by (2l+1) inside the plotting function --> CHANGE THIS ONCE YOU MODIFY the PK ESTUMATION CODE !!!')
@@ -239,7 +239,7 @@ class KszPipe:
         for i, kbin_edges in enumerate(self.kbin_edges):
             # Estimate power spectra. and normalize by dividing by window function.
             pk = core.estimate_power_spectrum(self.box, fourier_space_maps, kbin_edges)
-            pk /= wf[:, :, None]
+            pk /= self.wf[:, :, None]
             # Save 'pk_data.npy' to disk. Note that the file format is specified here:
             # https://kszx.readthedocs.io/en/latest/kszpipe.html#kszpipe-details
             io_utils.write_npy(self.pk_data_filename[i], pk)

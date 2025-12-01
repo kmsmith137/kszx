@@ -320,7 +320,7 @@ class BaseLikelihood:
                 s = f'  ({(val-quantiles[2]):+.03f})' if (q != 0.5) else ''
                 print(f'{(100*q):.03f}% quantile: {val=:.03f}{s}')
 
-    def analyze_chi2(self, params=None, ddof=None):
+    def analyze_chi2(self, params=None, ddof=None, force_compute_cov=False):
         r"""Computes a $\chi^2$ statistic, which compares data to model with given set of parameters.
 
         Returns ($\chi^2$, $N_{dof}$, $\chi^2$ / N_{dof}$, $p$-value).
@@ -331,13 +331,15 @@ class BaseLikelihood:
         ``ndof = nkbins - ddof``. If ``ddof=None``, then it will be equal to the
         number of nonzero (fnl, bias) params. (This is usually the correct choice.)
 
+        force_compute_cov: If True, it evals the covariance matrix at either the besfit params or the provided params. If False, uses the covariance matrix used during the inference ie. at the fiducial parameters.
+
         Warning: Do not include percival factor in the covariance.
         """
 
         if params is None: params = self.bestfit
         if isinstance(params, list): params = {key: params[i] for i, key in enumerate(self.params)}
         
-        mean, cov = self.mean_and_cov(**params, force_compute_cov=True)
+        mean, cov = self.mean_and_cov(**params, force_compute_cov=force_compute_cov)
         if hasattr(self, 'percival_factor'): cov = cov / self.percival_factor  # remove percival factor applied in mean_and_cov.
         if ddof is None: ddof = len(params)
         
@@ -381,13 +383,13 @@ class Likelihood(BaseLikelihood):
                 assert fields[name]['name_params'][nn] in params
 
         self.pout = pout
-        self.first_kbin = first_kbin
-        self.last_kbin = last_kbin
+        self.first_kbin = first_kbin.copy()
+        self.last_kbin = last_kbin.copy()
         self.k = np.concatenate([pout.k[name[:2]][first_kbin[name]:last_kbin[name]] for name in fields])
         self.nk = [pout.k[name[:2]][first_kbin[name]:last_kbin[name]].size for name in fields]
-        self.fields = fields
+        self.fields = fields.copy()
 
-        self.params = params
+        self.params = params.copy()
         for field in fields:
             for name in fields[field]['name_params'].values(): 
                 assert name in params
@@ -436,7 +438,7 @@ class Likelihood(BaseLikelihood):
 
         if cov_fix_params:
             print(f'Precompute the covariance matrix with {params_cov=}')
-            self.params_cov = params_cov
+            self.params_cov = params_cov.copy()
             _, cov = self.mean_and_cov(force_compute_cov=True, **params_cov)
             self.cov = cov
             self.cov_inv = np.linalg.inv(cov)
@@ -832,7 +834,11 @@ class CombineTracerLikelihood(Likelihood):
         self.likelihoods = likelihoods
 
         self.fields = {}
-        for lik in self.likelihoods: self.fields.update(lik.fields)
+        # I add a prefix to the field names to avoid duplicates and be able to plot all the data together:
+        # This is a hacky trick only for plotting purpose, self.fields is not used in the computations.
+        for i, lik in enumerate(self.likelihoods): 
+            new_fields = {f'{i}_'+key: value for key, value in lik.fields.items()}
+            self.fields.update(new_fields)
 
         self.params = {}
         for lik in self.likelihoods: self.params.update(lik.params)

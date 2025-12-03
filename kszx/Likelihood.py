@@ -358,7 +358,7 @@ class Likelihood(BaseLikelihood):
                  params={'fnl': {'ref': 0, 'prior': [-100, 100], 'latex': r'$f_{\rm NL}^{\rm loc}$'}},
                  fields={'gv': {'freq': ['90', '150'], 'field': [1, 0], 'ell': [0, 1], 'name_params': {'fnl':'fnl', 'bv':'bv', 'bfg':'bfg'}}}, 
                  first_kbin={'gv': None}, last_kbin={'gv': None}, jeffreys_prior=False,
-                 cov_fix_params=False, params_cov=None, cov_correction='hartlap-percival', 
+                 cov_fix_params=False, params_cov=None, rescale_cross_cov=None, cov_correction='hartlap-percival', 
                  cov_interp=False, interp_method='linear'):
         r""" 
         pout: KszPipeOutdir object. 
@@ -368,6 +368,12 @@ class Likelihood(BaseLikelihood):
                 pout.pgg_mean() / pout.pgv_mean() ... ('gv': 'freq', 'field', 'ell') and all field have 'name_params'. name_params should be a dictionary with the mapping between the parameter names used in the KszPipeOutdir methods and the parameter names used in the inference (i.e. in params). If you want to fix some parameters to a given value, you can provide a 'fix_params' entry with a dictionary of the parameters to fix and their values. For example, 'fix_params': {'bv': 1.0} will fix bv to 1.0 in the likelihood evaluation.
         first_kbin, last_kbin: dictionary with the same key entries than fields.
         jeffreys_prior: if True, include the Jeffreys prior in the likelihood. Not ready yet.
+
+        cov_fix_params: if True, compute the covariance matrix only once at the fiducial value of the parameters (given in params_cov) and use it for all  
+                        likelihood evaluations. This speeds up the inference but ignores the parameter dependence of the covariance matrix.
+        params_cov: dictionary of parameter values at which to compute the covariance matrix if cov_fix_params is True.
+        rescale_cross_cov: dictionary to use different parameters value for the cross-covariance terms between different fields.
+                           example: {'gv_1_90-gv_1_150': {'snv1': snv90x150, 'snv2': snv90x150}, 'gv}
 
         cov_correction can be 'hartlap', 'percival', 'hartlap-percival' or None. WARNING: percival correction should not be applied when the chi2 is computed.
         """
@@ -435,6 +441,7 @@ class Likelihood(BaseLikelihood):
         self.cov_fix_params = cov_fix_params  # Speed up the mcmc by using covariance at fiducial value of the parameters.
         self.cov_interp = cov_interp
         self.interp_method = interp_method
+        self.rescale_cross_cov = rescale_cross_cov
 
         if cov_fix_params:
             print(f'Precompute the covariance matrix with {params_cov=}')
@@ -522,6 +529,10 @@ class Likelihood(BaseLikelihood):
                             derived_params = ff.pop('derived_params2')
                             derived = self.compute_derived_params(derived_params, params)
                             ff.update({nn+'2': derived[nn]for nn in derived_params})
+
+                        if self.rescale_cross_cov is not None:
+                            update_params = self.rescale_cross_cov.get(f"{field1}-{field2}", None)
+                            if update_params is not None: ff.update(update_params)
 
                         # not super elegant... 
                         if field1_split[0] == 'gg':

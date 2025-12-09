@@ -357,7 +357,7 @@ class Likelihood(BaseLikelihood):
     def __init__(self, pout, 
                  params={'fnl': {'ref': 0, 'prior': [-100, 100], 'latex': r'$f_{\rm NL}^{\rm loc}$'}},
                  fields={'gv': {'freq': ['90', '150'], 'field': [1, 0], 'ell': [0, 1], 'name_params': {'fnl':'fnl', 'bv':'bv', 'bfg':'bfg'}}}, 
-                 first_kbin={'gv': None}, last_kbin={'gv': None}, jeffreys_prior=False,
+                 first_kbin={'gv': None}, last_kbin={'gv': None}, k_rebin={'gv': 1}, jeffreys_prior=False,
                  cov_fix_params=False, params_cov=None, rescale_cross_cov=None, cov_correction='hartlap-percival', 
                  cov_interp=False, interp_method='linear'):
         r""" 
@@ -391,9 +391,15 @@ class Likelihood(BaseLikelihood):
         self.pout = pout
         self.first_kbin = first_kbin.copy()
         self.last_kbin = last_kbin.copy()
-        self.k = np.concatenate([pout.k[name[:2]][first_kbin[name]:last_kbin[name]] for name in fields])
-        self.nk = [pout.k[name[:2]][first_kbin[name]:last_kbin[name]].size for name in fields]
+        self.k_rebin = k_rebin.copy()
+        self.k_norebin = np.concatenate([pout.k[name[:2]][first_kbin[name]:last_kbin[name]] for name in fields])
+        self.nk_norebin = [pout.k[name[:2]][first_kbin[name]:last_kbin[name]].size for name in fields]
+        
         self.fields = fields.copy()
+
+        self.k = [self._rebin_vector(pout.k[name[:2]][first_kbin[name]:last_kbin[name]], pout.k[name[:2]][first_kbin[name]:last_kbin[name]], k_rebin[name]) for name in fields]
+        self.nk = [len(kk) for kk in self.k]
+        self.k = np.concatenate(self.k)
 
         self.params = params.copy()
         for field in fields:
@@ -406,21 +412,24 @@ class Likelihood(BaseLikelihood):
             sys.exit(8)
 
         data = []
-        for field in self.fields: 
+        for i, field in enumerate(self.fields): 
             field_split = field.split('_')
             ff = self.fields[field].copy()
             _ = ff.pop('name_params')
             if 'fix_params' in ff: _ = ff.pop('fix_params')
             if 'derived_params' in ff: _ = ff.pop('derived_params')
+            data_tmp = None
             if field_split[0] == 'gg':
-                data += [self.pout.pgg_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
+                data_tmp = self.pout.pgg_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]
             elif field_split[0] == 'gv':
-                data += [self.pout.pgv_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
+                data_tmp = self.pout.pgv_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]
             elif field_split[0] == 'vv':
-                data += [self.pout.pvv_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
+                data_tmp = self.pout.pvv_data(**ff)[self.first_kbin[field]:self.last_kbin[field]]
             else:
                 print(f"{field_split} in not in gg, gv, vv")
                 sys.exit(2)
+            kk = self.k_norebin[int(np.sum(self.nk_norebin[:i])):int(np.sum(self.nk_norebin[:i+1]))]
+            data += [self._rebin_vector(data_tmp, kk, k_rebin=self.k_rebin[field])]
         self.data = np.concatenate(data)
 
         self.hartlap_factor, self.percival_factor = 1.0, 1.0
@@ -465,11 +474,46 @@ class Likelihood(BaseLikelihood):
             self.logdet_interp = logdet_interp
             self.cov_cholesky_interp = lambda pp: utils.unflatten_cholesky(cov_choleskk_interp(pp), dim=self.k.size)
 
+    def _rebin_vector(self, vect, k, k_rebin=1):
+        " We take the average of every two points above k_rebin. k are assumed to be increasing ... "
+
+        non_rebin_vect = vect[k < k_rebin]
+        rebin_vect = vect[k >= k_rebin]
+        
+        if rebin_vect.size % 2 != 0:
+            # we drop the last element, bye bye:
+            rebin_vect = rebin_vect[:-1]
+        
+        rebin_vect = rebin_vect.reshape(-1, 2).mean(axis=1)
+
+        return np.concatenate([non_rebin_vect, rebin_vect])
+
+    def _rebin_cov(self, cov, k1, k2, k_rebin1=1, k_rebin2=1):
+        """ We rebin the covariance matrix.."""
+        A = cov[np.ix_(k1 < k_rebin1, k2 < k_rebin2)]
+        B = cov[np.ix_(k1 < k_rebin1, k2 >= k_rebin2)]
+        C = cov[np.ix_(k1 >= k_rebin1, k2 < k_rebin2)]
+        D = cov[np.ix_(k1 >= k_rebin1, k2 >= k_rebin2)]
+        
+        if np.sum(k1>=k_rebin1) % 2 != 0:
+            C = C[:-1, :]
+            D = D[:-1, :]
+        
+        if np.sum(k2 >= k_rebin2) % 2 != 0:
+            B = B[:, :-1]
+            D = D[:, :-1]
+
+        D = 1/4 * D.reshape(D.shape[0]//2, 2, D.shape[1]//2, 2).sum(axis=(1,3))
+        B = 1/4 * B.reshape(B.shape[0], B.shape[1]//2, 2).sum(axis=2)
+        C = 1/4 * C.reshape(C.shape[0]//2, 2, C.shape[1]).sum(axis=1)
+
+        return np.block([[A, B], [C, D]]) 
+
     def mean_and_cov(self, force_compute_cov=False, return_cov=True, return_grad=False, **params):
         r""" Computes the model prediction and covariance matrix for the given parameters from the surrogates."""
 
         mu = []
-        for field in self.fields: 
+        for i, field in enumerate(self.fields):
             field_split = field.split('_')
             ff = self.fields[field].copy()
 
@@ -486,12 +530,16 @@ class Likelihood(BaseLikelihood):
                 derived = self.compute_derived_params(derived_params, params)
                 ff.update(derived)
 
+            mu_tmp = None
             if field_split[0] == 'gg':
-                mu += [self.pout.pgg_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
+                mu_tmp = self.pout.pgg_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]
             elif field_split[0] == 'gv':
-                mu += [self.pout.pgv_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
+                mu_tmp = self.pout.pgv_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]
             elif field_split[0] == 'vv':
-                mu += [self.pout.pvv_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]]
+                mu_tmp = self.pout.pvv_mean(**ff)[self.first_kbin[field]:self.last_kbin[field]]
+            kk = self.k_norebin[int(np.sum(self.nk_norebin[:i])):int(np.sum(self.nk_norebin[:i+1]))]
+            mu += [self._rebin_vector(mu_tmp, kk, k_rebin=self.k_rebin[field])]
+
         mu = np.concatenate(mu)
 
         if not return_cov:
@@ -501,9 +549,9 @@ class Likelihood(BaseLikelihood):
                 cov = self.cov
             else:
                 cov = []
-                for field1 in self.fields: 
+                for i, field1 in enumerate(self.fields): 
                     field1_split = field1.split('_')
-                    for field2 in self.fields: 
+                    for j, field2 in enumerate(self.fields): 
                         field2_split = field2.split('_')
 
                         ff = {f"{key}1": value for key, value in self.fields[field1].items()}
@@ -535,27 +583,33 @@ class Likelihood(BaseLikelihood):
                             if update_params is not None: ff.update(update_params)
 
                         # not super elegant... 
+                        cov_tmp = None
                         if field1_split[0] == 'gg':
                             if field2_split[0] == 'gg':
-                                cov = [self.pout.pggxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
+                                cov_tmp = self.pout.pggxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]
                             elif field2_split[0] == 'gv':
-                                cov += [self.pout.pggxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
+                                cov_tmp = self.pout.pggxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]
                             elif field2_split[0] == 'vv':
-                                cov += [self.pout.pggxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
+                                cov_tmp = self.pout.pggxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]
                         elif field1_split[0] == 'gv':
                             if field2_split[0] == 'gg':
-                                cov += [self.pout.pgvxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
+                                cov_tmp = self.pout.pgvxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]
                             elif field2_split[0] == 'gv':
-                                cov += [self.pout.pgvxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
+                                cov_tmp = self.pout.pgvxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]
                             elif field2_split[0] == 'vv':
-                                cov += [self.pout.pgvxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
+                                cov_tmp = self.pout.pgvxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]
                         elif field1_split[0] == 'vv':
                             if field2_split[0] == 'gg':
-                                cov += [self.pout.pvvxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
+                                cov_tmp = self.pout.pvvxpgg_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]
                             elif field2_split[0] == 'gv':
-                                cov += [self.pout.pvvxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
+                                cov_tmp = self.pout.pvvxpgv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]
                             elif field2_split[0] == 'vv':
-                                cov += [self.pout.pvvxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]]
+                                cov_tmp = self.pout.pvvxpvv_cov(**ff)[self.first_kbin[field1]:self.last_kbin[field1], self.first_kbin[field2]:self.last_kbin[field2]]
+    
+                        kk1 = self.k_norebin[int(np.sum(self.nk_norebin[:i])):int(np.sum(self.nk_norebin[:i+1]))]
+                        kk2 = self.k_norebin[int(np.sum(self.nk_norebin[:j])):int(np.sum(self.nk_norebin[:j+1]))]
+                        cov += [self._rebin_cov(cov_tmp, kk1, kk2, k_rebin1=self.k_rebin[field1], k_rebin2=self.k_rebin[field2])]
+                        
                 cov = np.block([[cov[i*len(self.fields) + j] for j in range(len(self.fields))] for i in range(len(self.fields))])
             
             cov = self.factor_cov_correction * cov  # apply the correction factor to the covariance matrix

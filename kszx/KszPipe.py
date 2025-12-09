@@ -1199,9 +1199,8 @@ class CombineKszPipeOutdir(KszPipeOutdir):
                         if (kk1 == totest1 and kk2 == totest2) or (kk2 == totest1 and kk1 == totest2):
                             w1_surr[i, j] = val
                             
-        # print(w1_data, w1_surr)
-        print(w1_data)
-        print(w1_surr)
+        #print(w1_data)
+        #print(w1_surr)
 
         self.pk_data = [w1_data[:,:,None]*out1.pk_data[i] + (1 - w1_data)[:,:,None]*out2.pk_data[i] for i in range(len(out1.pk_data))]
         self.pk_surr = [w1_surr[None,:,:,None]*out1.pk_surr[i] + (1 - w1_surr)[None,:,:,None]*out2.pk_surr[i] for i in range(len(out1.pk_surr))]

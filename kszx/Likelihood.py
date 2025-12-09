@@ -827,11 +827,13 @@ class Likelihood(BaseLikelihood):
         else: 
             cov = self.mean_and_cov(force_compute_cov=True, **self.bestfit)[1]
 
-        plt.figure(figsize=(2.5*len(self.fields) + 1, 2.5*len(self.fields) + 2))
+        plt.figure(figsize=(2.2*len(self.fields) + 1, 2.2*len(self.fields) + 2))
         ax = plt.gca()
         im = ax.imshow(np.log10(np.abs(cov)))
 
-        idx = np.arange(0, len(self.k), len(self.k) // (nticks*len(self.fields)))
+        tmp = np.concatenate([np.array([0]), np.cumsum(self.nk)])
+        idx = np.concatenate([np.arange(tmp[i], tmp[i+1], nticks) for i in range(len(self.fields))])
+
         ax.set_xticks(idx, [f'{self.k[i]:2.2f}' for i in idx])
         ax.set_yticks(idx, [f'{self.k[i]:2.2f}' for i in idx])
 
@@ -851,7 +853,7 @@ class Likelihood(BaseLikelihood):
         else:
             plt.show()
 
-    def plot_corr(self, params=None, nticks=5, fn_fig=None, return_fig=False):
+    def plot_corr(self, params=None, nticks=6, fn_fig=None, return_fig=False):
         """ """
         from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -862,7 +864,7 @@ class Likelihood(BaseLikelihood):
 
         corr = cov / np.sqrt(np.outer(np.diag(cov), np.diag(cov)))
 
-        plt.figure(figsize=(2.5*len(self.fields) + 1, 2.5*len(self.fields) + 2))
+        plt.figure(figsize=(2.2*len(self.fields) + 1, 2.2*len(self.fields) + 2))
         ax = plt.gca()
 
         # Generate a custom diverging colormap: difficult to be nice :(
@@ -871,9 +873,11 @@ class Likelihood(BaseLikelihood):
 
         im = ax.imshow(corr, vmin=-1, vmax=1, cmap=cmap)
 
-        idx = np.arange(0, len(self.k), len(self.k) // (nticks*len(self.fields)))
-        ax.set_xticks(idx, [f'{self.k[i]:2.2f}' for i in idx])
-        ax.set_yticks(idx, [f'{self.k[i]:2.2f}' for i in idx])
+        tmp = np.concatenate([np.array([0]), np.cumsum(self.nk)])
+        idx = np.concatenate([np.arange(tmp[i], tmp[i+1], nticks) for i in range(len(self.fields))])
+
+        ax.set_xticks(idx, [f'{self.k[i]:2.3f}' for i in idx])
+        ax.set_yticks(idx, [f'{self.k[i]:2.3f}' for i in idx])
 
         ax.set_xlabel('$k$ [Mpc$^{-1}$]')
         ax.set_ylabel('$k$ [Mpc$^{-1}$]')
@@ -890,7 +894,6 @@ class Likelihood(BaseLikelihood):
             return plt.gcf()
         else:
             plt.show()
-            
 
 class CombineTracerLikelihood(Likelihood):
     def __init__(self, *likelihoods):

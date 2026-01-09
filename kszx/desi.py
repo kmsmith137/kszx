@@ -165,6 +165,7 @@ def read_fits_catalog(filename, name=None):
         #     NX                  f8  
         #     WEIGHT_FKP          f8  
         
+        catalog.add_column('targetid', f[1].read('TARGETID'))
         catalog.add_column('ra_deg', f[1].read('RA'))
         catalog.add_column('dec_deg', f[1].read('DEC'))
         catalog.add_column('z', f[1].read('Z'))
@@ -174,7 +175,8 @@ def read_fits_catalog(filename, name=None):
         catalog.add_column('wzf', f[1].read('WEIGHT_ZFAIL'))
         catalog.add_column('wsys', f[1].read('WEIGHT_SYS'))
         catalog.add_column('frac_tlobs_tiles', f[1].read('FRAC_TLOBS_TILES'))
-
+        catalog.add_column('nx', f[1].read('NX'))
+        
     catalog._announce_file_read()
     return catalog
 

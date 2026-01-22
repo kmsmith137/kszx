@@ -2,6 +2,7 @@ from . import test_box
 from . import test_fft
 from . import test_lss
 from . import test_utils
+from . import test_mlhack
 
 
 def run_all_tests():
@@ -28,3 +29,7 @@ def run_all_tests():
     #test_lss.monte_carlo_simulate_gaussian([5,4,6], 10.0)
     #test_lss.monte_carlo_simulate_gaussian([6,7,4], 10.0)
     #test_lss.monte_carlo_simulate_gaussian([4,4,5], 10.0)
+
+    test_mlhack.test_cartesian_to_spherical()
+    test_mlhack.test_fft_c2v()
+    

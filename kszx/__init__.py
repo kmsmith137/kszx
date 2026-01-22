@@ -51,5 +51,8 @@ from . import desils_main
 from . import planck
 from . import sdss
 
+# Hacking for ML paper -- interfaces may change in the future
+from . import mlhack
+
 # This submodule is a place for old code to retire peacefully.
 from . import retirement_home

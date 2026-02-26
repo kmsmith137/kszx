@@ -135,10 +135,10 @@ def test_interpolation_gridding_consistency():
         Aw = core.grid_points(box, points, weights=w, kernel=kernel, periodic=periodic, wscal=wscal)
 
         dot1 = np.dot(w1,Ag)
-        dot2 = helpers.map_dot_product(box,Aw,g)
-        
+        dot2 = core.map_dot_product(box,Aw,g)
+
         den = np.dot(w1,w1) * np.dot(Ag,Ag)
-        den += helpers.map_dot_product(box,g,g) * helpers.map_dot_product(box,Aw,Aw)
+        den += core.map_dot_product(box,g,g) * core.map_dot_product(box,Aw,Aw)
 
         epsilon = np.abs(dot1-dot2) / den**(0.5)
         assert epsilon < 1.0e-12

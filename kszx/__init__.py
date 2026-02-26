@@ -18,7 +18,8 @@ from .core import \
     kbin_average, \
     fkp_from_ivar_2d, \
     ivar_combine, \
-    estimate_cl
+    estimate_cl, \
+    map_dot_product
 
 # "Core" classes.
 from .Box import Box

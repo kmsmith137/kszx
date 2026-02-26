@@ -1111,6 +1111,53 @@ def kbin_average(box, f, kbin_edges, *, use_dc=False, allow_empty_bins=False, re
 ####################################################################################################
 
 
+def map_dot_product(box, arr1, arr2, normalize=True):
+    """Returns dot product of two maps (maps can be either Fourier or real space).
+    
+    For two real-space arrays, the dot product is defined by:
+        
+       f.g = (pixel volume) sum_x f(x) g(x)       [ morally int d^nx f(x) g(x) ]
+
+   For two Fourier-space arrays, the dot product is defined by:
+
+       f.g = (box volume)^{-1} sum_k f(k) g(k)^*  [ morally int d^nk/(2pi)^n f(k) g(k)^* ]
+
+    If dot products are defined with these normalizations, then:
+
+       - kszx.fft_c2r() and kszx.fft_c2r() are adjoints (transposes)
+       - kszx.interpolate_points() and kszx.grid_points() are ajdoints.
+
+    These statements are the basis for unit tests in kszx.tests.test_lss.
+    """
+    
+    # Case 1: real-space dot product.
+    if box.is_real_space_map(arr1) and box.is_real_space_map(arr2):
+        return box.pixel_volume * np.vdot(arr1, arr2)
+
+    if (not box.is_fourier_space_map(arr1)) or (not box.is_fourier_space_map(arr2)):
+        raise RuntimeError('wrong shapes/dtypes in map_dot_product()')
+    
+    # Case 2: Fourier-space dot product, last dimension is odd.
+    if box.npix[-1] % 2:
+        t = np.vdot(arr1[...,0], arr2[...,0])
+        t += 2 * np.vdot(arr1[...,1:], arr2[...,1:])
+        
+    # Case 3: Fourier-space dot product, last dimension is even and > 2.
+    elif box.npix[-1] > 2:
+        t = np.vdot(arr1[...,0], arr2[...,0])
+        t += np.vdot(arr1[...,-1], arr2[...,-1])
+        t += 2 * np.vdot(arr1[...,1:-1], arr2[...,1:-1])
+        
+    # Case 4: Fourier-space dot product, last dimension == 2
+    else:
+        t = np.vdot(arr1, arr2)
+    
+    return t.real / box.box_volume
+
+
+####################################################################################################
+
+
 def fkp_from_ivar_2d(ivar, cl0, normalize=True, return_wvar=False):
     """Makes a 2-d pixell FKP map (intended for CMB) from a pixell inverse variance map.
 

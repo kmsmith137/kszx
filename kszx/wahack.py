@@ -107,7 +107,9 @@ def flatten(box, arr):
     arr = np.asarray(arr)
 
     if box.is_real_space_map(arr):
-        return arr.reshape(-1)
+        ret = arr.reshape(-1, copy=True)
+        ret *= (box.pixsize)**1.5
+        return ret
 
     elif box.is_fourier_space_map(arr):
         n = np.prod(box.npix)
@@ -133,7 +135,9 @@ def unflatten(box, arr, *, fourier=True):
         raise RuntimeError('unflatten(): got {arr.shape=} and {arr.dtype=}, expected dtype=float and shape={(n,)}')
 
     if not fourier:
-        return arr.reshape(box.real_space_shape)
+        ret = np.reshape(arr, box.real_space_shape, copy=True)
+        ret *= (box.pixsize)**(-1.5)
+        return ret
 
     else:
         ret = np.zeros(box.fourier_space_shape, dtype=complex)

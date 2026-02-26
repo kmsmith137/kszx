@@ -12,86 +12,80 @@ import numpy as np
 # Interior modes have independent real/imaginary parts. Boundary slices satisfy the same
 # conjugacy constraint in (D-1) dimensions, so we recurse. The base case (1D) decomposes
 # into self-conjugate scalars (real-valued) and conjugate pairs.
+#
+# Helpers write directly into a pre-allocated destination array to avoid intermediate
+# allocations and np.concatenate() calls. Each helper returns the updated offset.
 
 
-def _flatten_conj_1d(u):
-    """Flatten length-n complex array with u[i]* = u[(-i)%n] to n real values."""
+def _flatten_conj_1d(u, out, offset):
+    """Write n real values from conjugate-symmetric length-n array u into out[offset:]."""
     n = len(u)
     nh = n // 2
     end = nh if (n % 2 == 0) else (n + 1) // 2
-    parts = []
-    # Self-conjugate at i=0 (real-valued)
-    parts.append(u[0:1].real)
-    # Self-conjugate at i=n/2 (real-valued, only if n even)
-    if n % 2 == 0:
-        parts.append(u[nh:nh+1].real)
-    # Paired modes i=1,...,end-1: real and imaginary parts are independent
-    parts.append(u[1:end].real)
-    parts.append(u[1:end].imag)
-    return np.concatenate(parts)
-
-
-def _unflatten_conj_1d(v, n):
-    """Inverse of _flatten_conj_1d. Returns complex array of length n with conjugacy."""
-    u = np.zeros(n, dtype=complex)
-    nh = n // 2
-    end = nh if (n % 2 == 0) else (n + 1) // 2
-    n_interior = end - 1
-
-    offset = 0
-    u[0] = v[0]
+    ni = end - 1
+    out[offset] = u[0].real
     offset += 1
     if n % 2 == 0:
-        u[nh] = v[offset]
+        out[offset] = u[nh].real
         offset += 1
-    u[1:end] = v[offset:offset+n_interior] + 1j * v[offset+n_interior:offset+2*n_interior]
-    offset += 2 * n_interior
-    # Fill conjugate half: u[n-i] = conj(u[i])
+    out[offset:offset+ni] = u[1:end].real
+    out[offset+ni:offset+2*ni] = u[1:end].imag
+    return offset + 2 * ni
+
+
+def _unflatten_conj_1d(inp, offset, dest):
+    """Read from inp[offset:], write conjugate-symmetric values into dest[:]."""
+    n = len(dest)
+    nh = n // 2
+    end = nh if (n % 2 == 0) else (n + 1) // 2
+    ni = end - 1
+    dest[0] = inp[offset]
+    offset += 1
+    if n % 2 == 0:
+        dest[nh] = inp[offset]
+        offset += 1
+    dest[1:end].real = inp[offset:offset+ni]
+    dest[1:end].imag = inp[offset+ni:offset+2*ni]
+    offset += 2 * ni
     if end > 1:
-        u[n-1:n-end:-1] = np.conj(u[1:end])
-    assert offset == n
-    return u
+        dest[n-1:n-end:-1] = np.conj(dest[1:end])
+    return offset
 
 
-def _flatten_conj_2d(t):
-    """Flatten complex (n0,n1) array with t[i,j]* = t[(-i)%n0,(-j)%n1] to n0*n1 real values."""
+def _flatten_conj_2d(t, out, offset):
+    """Write n0*n1 real values from conjugate-symmetric (n0,n1) array t into out[offset:]."""
     n0, n1 = t.shape
     nh = n1 // 2
     end = nh if (n1 % 2 == 0) else (n1 + 1) // 2
-    parts = []
-    # Boundary columns (where -j ≡ j mod n1) satisfy 1D conjugacy on axis 0
-    parts.append(_flatten_conj_1d(t[:, 0]))
+    ni = n0 * (end - 1)
+    # Boundary columns satisfy 1D conjugacy on axis 0
+    offset = _flatten_conj_1d(t[:, 0], out, offset)
     if n1 % 2 == 0:
-        parts.append(_flatten_conj_1d(t[:, nh]))
+        offset = _flatten_conj_1d(t[:, nh], out, offset)
     # Interior columns: all n0 complex values are independent
-    interior = t[:, 1:end]
-    parts.append(interior.real.reshape(-1))
-    parts.append(interior.imag.reshape(-1))
-    return np.concatenate(parts)
+    out[offset:offset+ni] = t[:, 1:end].real.reshape(-1)
+    out[offset+ni:offset+2*ni] = t[:, 1:end].imag.reshape(-1)
+    return offset + 2 * ni
 
 
-def _unflatten_conj_2d(v, n0, n1):
-    """Inverse of _flatten_conj_2d. Returns complex (n0,n1) array with conjugacy."""
-    t = np.zeros((n0, n1), dtype=complex)
+def _unflatten_conj_2d(inp, offset, dest):
+    """Read from inp[offset:], write conjugate-symmetric values into dest[:,:]."""
+    n0, n1 = dest.shape
     nh = n1 // 2
     end = nh if (n1 % 2 == 0) else (n1 + 1) // 2
-    n_interior = end - 1
-
-    offset = 0
-    t[:, 0] = _unflatten_conj_1d(v[offset:offset+n0], n0)
-    offset += n0
+    ni = end - 1
+    isize = n0 * ni
+    offset = _unflatten_conj_1d(inp, offset, dest[:, 0])
     if n1 % 2 == 0:
-        t[:, nh] = _unflatten_conj_1d(v[offset:offset+n0], n0)
-        offset += n0
-    isize = n0 * n_interior
-    t[:, 1:end] = v[offset:offset+isize].reshape(n0, n_interior) + 1j * v[offset+isize:offset+2*isize].reshape(n0, n_interior)
+        offset = _unflatten_conj_1d(inp, offset, dest[:, nh])
+    dest[:, 1:end].real = inp[offset:offset+isize].reshape(n0, ni)
+    dest[:, 1:end].imag = inp[offset+isize:offset+2*isize].reshape(n0, ni)
     offset += 2 * isize
     # Fill conjugate half: t[i, n1-j] = conj(t[(-i)%n0, j])
     if end > 1:
         neg_i = (-np.arange(n0)) % n0
-        t[:, n1-1:n1-end:-1] = np.conj(t[neg_i, 1:end])
-    assert offset == n0 * n1
-    return t
+        dest[:, n1-1:n1-end:-1] = np.conj(dest[neg_i, 1:end])
+    return offset
 
 
 ####################################################################################################
@@ -118,22 +112,27 @@ def flatten(box, arr):
 
     elif box.is_fourier_space_map(arr):
         n0, n1, n2 = box.npix
-        parts = []
+        n = n0 * n1 * n2
+        out = np.empty(n)
+        offset = 0
 
         # Boundary slices: k2=0 (always), and k2=n2/2 (if n2 is even).
         # Each boundary slice has shape (n0, n1) and satisfies the 2D conjugacy
         # constraint t[i,j]^* = t[(-i)%n0, (-j)%n1].
-        parts.append(_flatten_conj_2d(arr[:,:,0]))
+        offset = _flatten_conj_2d(arr[:,:,0], out, offset)
         if n2 % 2 == 0:
-            parts.append(_flatten_conj_2d(arr[:,:,-1]))
+            offset = _flatten_conj_2d(arr[:,:,-1], out, offset)
 
         # Interior modes (k2 not on the boundary) have independent real
         # and imaginary parts, contributing 2 real DOFs per mode.
         interior = arr[:,:,1:-1] if (n2 % 2 == 0) else arr[:,:,1:]
-        parts.append(interior.real.reshape(-1))
-        parts.append(interior.imag.reshape(-1))
+        isize = interior.size
+        out[offset:offset+isize] = interior.real.reshape(-1)
+        out[offset+isize:offset+2*isize] = interior.imag.reshape(-1)
+        offset += 2 * isize
 
-        return np.concatenate(parts)
+        assert offset == n
+        return out
 
     else:
         raise RuntimeError('bad shape/dtype')
@@ -159,32 +158,22 @@ def unflatten(box, arr, *, fourier=True):
         n0, n1, n2 = box.npix
         nk2 = n2 // 2 + 1
         ret = np.zeros(box.fourier_space_shape, dtype=complex)
-
         offset = 0
-        bsize = n0 * n1
 
-        # Boundary slice at k2=0
-        ret[:,:,0] = _unflatten_conj_2d(arr[offset:offset+bsize], n0, n1)
-        offset += bsize
-
-        # Boundary slice at k2=n2/2 (only if n2 is even)
+        # Boundary slices
+        offset = _unflatten_conj_2d(arr, offset, ret[:,:,0])
         if n2 % 2 == 0:
-            ret[:,:,-1] = _unflatten_conj_2d(arr[offset:offset+bsize], n0, n1)
-            offset += bsize
+            offset = _unflatten_conj_2d(arr, offset, ret[:,:,-1])
 
-        # Interior modes: reconstruct complex from real and imaginary parts.
+        # Interior modes
         n_boundary = 2 if (n2 % 2 == 0) else 1
         n_interior = nk2 - n_boundary
         isize = n0 * n1 * n_interior
 
-        real_part = arr[offset:offset+isize].reshape(n0, n1, n_interior)
-        imag_part = arr[offset+isize:offset+2*isize].reshape(n0, n1, n_interior)
+        interior = ret[:,:,1:-1] if (n2 % 2 == 0) else ret[:,:,1:]
+        interior.real = arr[offset:offset+isize].reshape(n0, n1, n_interior)
+        interior.imag = arr[offset+isize:offset+2*isize].reshape(n0, n1, n_interior)
         offset += 2 * isize
-
-        if n2 % 2 == 0:
-            ret[:,:,1:-1] = real_part + 1j * imag_part
-        else:
-            ret[:,:,1:] = real_part + 1j * imag_part
 
         assert offset == n
         return ret

@@ -3,6 +3,7 @@ from . import test_fft
 from . import test_lss
 from . import test_utils
 from . import test_mlhack
+from . import test_wahack
 
 
 def run_all_tests():
@@ -32,4 +33,7 @@ def run_all_tests():
 
     test_mlhack.test_cartesian_to_spherical()
     test_mlhack.test_fft_c2v()
+    
+    test_wahack.test_flatten_real()
+    test_wahack.test_flatten_fourier()
     

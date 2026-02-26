@@ -54,5 +54,8 @@ from . import sdss
 # Hacking for ML paper -- interfaces may change in the future
 from . import mlhack
 
+# Hacking for wide-angle paper -- interfaces may change in the future
+from . import wahack
+
 # This submodule is a place for old code to retire peacefully.
 from . import retirement_home

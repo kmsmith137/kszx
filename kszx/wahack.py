@@ -1,6 +1,73 @@
 from . import Box
+from . import core
+from . import cpp_kernels
 
 import numpy as np
+
+
+class Vlm:
+    """
+    Computes Fourier-space maps V_{lm}(k), given real-space map f(x) and set of l-values.
+
+    Constructor arguments
+    ---------------------
+
+      - box: instance of class Box
+      - f: real-space map
+      - ls: set of nonnegative integers
+
+    Members
+    -------
+
+      - self.box: the Box instance
+      - self.ls: sorted list of l-values
+      - self.vli: dictionary (l,i) -> Fourier-space map, where 0 <= i <= 2l, see below.
+
+    Description
+    -----------
+    
+    Recall that V_{lm}(k) is defined by    
+      V_{lm}(k) = (4pi)^{1/2} int_x e^{-ik.x} f(x) Y_{lm}(\hat x)
+    
+    and satisfies:
+      V_{l,-m}(k) = (-1)^m V_{lm}(-k)^*
+    
+    In implementation, it's convenient to work in a real basis.
+    For 0 <= i <= 2l, define real spherical harmonics y_{li} by:
+       Y_{l0}      for i=0
+       Re(Y_{lm})  for i=2m-1
+       Im(Y_{lm})  for i=2m
+
+    Define v_{li}(k) by:
+      v_{li}(k) = (4pi)^{1/2} int_x e^{-ik.x} f(x) y_{li}(\hat x)
+    
+    Then we have:
+      v_{li}(-k) = v_{li}(k)^*
+    
+    This is convenient because v_{li} can be represented as an "ordinary" Fourier-space map.
+
+    The V_{lm}(k) maps are given in terms of v_{li}(k) as follows:
+    
+      V_{l0}(k) = v_{l0}(k)                                    for m = 0
+      V_{lm}(k) = v_{l,2m-1}(k) + i v_{l,2m}(k)                for m > 0
+      V_{l,-m}(k) = (-1)^m [ v_{l,2m-1}(k) - i v_{l,2m}(k) ]   for m > 0
+    """
+
+    def __init__(self, box, f, ls):
+        self.box = box
+        self.ls = sorted(set(ls))
+
+        tmp = np.empty(box.real_space_shape, dtype=float)
+        self.vli = {}
+
+        for l in self.ls:
+            for i in range(2*l + 1):
+                # multiply_xli_real_space multiplies by X_{li}, but we need Z_{li} (unnormalized).
+                # X_{l0} = sqrt(4pi/(2l+1)) * Z_{l0}, X_{li} = sqrt(8pi/(2l+1)) * Z_{li} for i>0.
+                # We want sqrt(4pi) * FFT(f * Z_{li}) = sqrt(4pi)/c_{li} * FFT(f * X_{li}).
+                coeff = np.sqrt(2*l + 1) if (i == 0) else np.sqrt((2*l + 1) / 2.0)
+                cpp_kernels.multiply_xli_real_space(tmp, f, l, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, coeff, False)
+                self.vli[(l,i)] = core.fft_r2c(box, tmp)
 
 
 ####################################################################################################

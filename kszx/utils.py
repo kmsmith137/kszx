@@ -1,6 +1,7 @@
 """The ``kszx.utils`` module contains miscelleanous utilities, that didn't really fit in elsewhere."""
 
 import os
+import functools
 import numpy as np
 import scipy.special
 import scipy.integrate
@@ -588,3 +589,34 @@ def contract_axis(arr, weights, axis):
     return np.dot(arr, weights)
 
 
+####################################################################################################
+
+
+def _check_integer(*args, name):
+    for i, a in enumerate(args):
+        if not isinstance(a, (int, np.integer)):
+            raise TypeError(f"{name}: argument {i} has type {type(a).__name__}, expected int")
+
+
+@functools.lru_cache(maxsize=10**5)
+def wigner_3j(j1, j2, j3, m1, m2, m3):
+    """Wigner 3j symbol. Wraps ``sympy.physics.wigner.wigner_3j`` with integer checking and caching."""
+    _check_integer(j1, j2, j3, m1, m2, m3, name='wigner_3j')
+    from sympy.physics.wigner import wigner_3j as _sympy_wigner_3j
+    return float(_sympy_wigner_3j(j1, j2, j3, m1, m2, m3))
+
+
+@functools.lru_cache(maxsize=10**5)
+def wigner_6j(j1, j2, j3, j4, j5, j6):
+    """Wigner 6j symbol. Wraps ``sympy.physics.wigner.wigner_6j`` with integer checking and caching."""
+    _check_integer(j1, j2, j3, j4, j5, j6, name='wigner_6j')
+    from sympy.physics.wigner import wigner_6j as _sympy_wigner_6j
+    return float(_sympy_wigner_6j(j1, j2, j3, j4, j5, j6))
+
+
+@functools.lru_cache(maxsize=10**5)
+def wigner_9j(j1, j2, j3, j4, j5, j6, j7, j8, j9):
+    """Wigner 9j symbol. Wraps ``sympy.physics.wigner.wigner_9j`` with integer checking and caching."""
+    _check_integer(j1, j2, j3, j4, j5, j6, j7, j8, j9, name='wigner_9j')
+    from sympy.physics.wigner import wigner_9j as _sympy_wigner_9j
+    return float(_sympy_wigner_9j(j1, j2, j3, j4, j5, j6, j7, j8, j9))

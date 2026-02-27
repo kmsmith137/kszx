@@ -1,6 +1,7 @@
 from . import Box
 from . import core
 from . import cpp_kernels
+from . import utils
 
 import numpy as np
 
@@ -41,7 +42,7 @@ class Vlm:
     Define v_{li}(k) by:
       v_{li}(k) = (4pi)^{1/2} int_x e^{-ik.x} f(x) y_{li}(\hat x)
     
-    Then we have:
+    Then v_{li}(k) is "real", in the sense that:
       v_{li}(-k) = v_{li}(k)^*
     
     This is convenient because v_{li} can be represented as an "ordinary" Fourier-space map.
@@ -68,6 +69,76 @@ class Vlm:
                 coeff = np.sqrt(2*l + 1) if (i == 0) else np.sqrt((2*l + 1) / 2.0)
                 cpp_kernels.multiply_xli_real_space(tmp, f, l, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, coeff, False)
                 self.vli[(l,i)] = core.fft_r2c(box, tmp)
+
+    def vlm_components(self, l, m):
+        """Returns (alpha, beta) such that V_{lm}(k) = alpha + i*beta.
+
+        alpha, beta are "real" (conjugacy-symmetric) Fourier-space maps.
+        beta is None when m=0 (meaning zero).
+        """
+
+        if m == 0:
+            alpha = self.vli[(l, 0)]
+            beta = None
+        elif m > 0:
+            alpha = self.vli[(l, 2*m-1)]
+            beta = self.vli[(l, 2*m)]
+        else:
+            am = abs(m)
+            sign = (-1)**am
+            alpha = sign * self.vli[(l, 2*am-1)]
+            beta = -sign * self.vli[(l, 2*am)]
+
+        return alpha, beta
+
+
+def Qlllm(vlm1, vlm2, l1, l2, l3, m3):
+    """
+    Compute Q^{L1,L2}_{L3,M3}(k), and return it as a pair (r,s) of "real" Fourier-space maps.
+
+    Recall the definition:
+    
+      Q^{L1,L2}_{L3,M3}(k)
+         = sum_{M1,M2} threej(L1,L2,L3,M1,M2,M3) V^{L1,M1}_1(-k) V^{L2,M2}_2(k).
+         = sum_{M1,M2} threej(L1,L2,L3,M1,M2,M3) (-1)^M1 V^{L1,-M1}_1(k)^* V^{L2,M2}_2(k).
+
+    We write Q^{L1,L2}_{L3,M3}(k) = r(k) + i*s(k), where r,s are "real" maps in the sense that
+    r(k)^* = r(-k) and s(k)^* = s(-k). This function returns (r,s), where r,s follow the usual
+    kszx conventions for "real" Fourier-space maps.
+
+    The 'vlm1' and 'vlm2' arguments are instances of 'class Vlm'.
+    """
+
+    box = vlm1.box
+    r = np.zeros(box.fourier_space_shape, dtype=complex)
+    s = np.zeros(box.fourier_space_shape, dtype=complex)
+
+    for m1 in range(-l1, l1+1):
+        m2 = -m1 - m3
+        if abs(m2) > l2:
+            continue
+
+        w3j = utils.wigner_3j(l1, l2, l3, m1, m2, m3)
+        if w3j == 0:
+            continue
+
+        # Using second definition: (-1)^M1 * V1^{l1,-m1}(k)^* * V2^{l2,m2}(k)
+        # V1^{l1,-m1}(k) = a1 + i*b1, so V1^{l1,-m1}(k)^* = a1^* - i*b1^*
+        # V2^{l2,m2}(k) = a2 + i*b2
+        a1, b1 = vlm1.vlm_components(l1, -m1)
+        a2, b2 = vlm2.vlm_components(l2, m2)
+
+        # (a1^* - i*b1^*)(a2 + i*b2) = (a1^*a2 + b1^*b2) + i(a1^*b2 - b1^*a2)
+        coeff = w3j * (-1)**m1
+        r += coeff * np.conj(a1) * a2
+        if (b1 is not None) and (b2 is not None):
+            r += coeff * np.conj(b1) * b2
+        if b2 is not None:
+            s += coeff * np.conj(a1) * b2
+        if b1 is not None:
+            s -= coeff * np.conj(b1) * a2
+
+    return (r, s)
 
 
 ####################################################################################################

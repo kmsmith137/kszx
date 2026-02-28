@@ -2,8 +2,10 @@ from . import helpers
 from .. import wahack
 from .. import core
 from .. import cpp_kernels
+from .. import utils
 
 import numpy as np
+import scipy.special
 
 
 def test_flatten_real():
@@ -127,6 +129,67 @@ def translate_cyclic(arr, s):
         ret = np.roll(ret, -int(s[axis]), axis=axis)
 
     return ret
+
+
+def Q_slow(box, f1, f2, l1, l2, l3, s):
+    """
+    Computes Q_{L1,L2,L3}(s) using the "real-space" definition.
+
+    f1, f2 are real-space maps (f_i = W_i * F_i in notation from the paper).
+
+    s is a length-3 integer-valued displacement vector. Displacements are "cyclic"
+    relative to the box dimensions. Throw an exception if s=0.
+
+    Returns a complex scalar. (Note that Q is secretly real, but checking that
+    the imaginary part is zero is a useful code test.)
+    """
+
+    s = np.asarray(s)
+    if np.all(s == 0):
+        raise ValueError('Q_slow: s=0 is not allowed (hat s is undefined)')
+
+    # Y_{l3,m3}(hat s). Direction of s doesn't depend on pixsize (it cancels).
+    s_float = s.astype(float)
+    r_s = np.sqrt(np.sum(s_float**2))
+    theta_s = np.arccos(s_float[2] / r_s)
+    phi_s = np.arctan2(s_float[1], s_float[0])
+
+    C = (4*np.pi)**1.5 * np.sqrt((2*l1+1) * (2*l2+1) * (2*l3+1))
+
+    result = 0.0 + 0.0j
+
+    for m1 in range(-l1, l1+1):
+        for m2 in range(-l2, l2+1):
+            m3 = -m1 - m2
+            if abs(m3) > l3:
+                continue
+
+            w3j = utils.wigner_3j(l1, l2, l3, m1, m2, m3)
+            if w3j == 0:
+                continue
+
+            # f1(x1) * Y_{l1,m1}(hat x1)
+            g1_re, g1_im = multiply_ylm_real_space(box, f1, l1, m1)
+
+            # f2(x1+s) * Y_{l2,m2}(hat(x1+s)):
+            # multiply f2 by Y_{l2,m2}, then translate so pixel x1 gets value at x1+s.
+            g2_re, g2_im = multiply_ylm_real_space(box, f2, l2, m2)
+            g2_re = translate_cyclic(g2_re, s)
+            g2_im = translate_cyclic(g2_im, s)
+
+            # Integral: V_pix * sum_{x1} g1(x1) * g2(x1+s)
+            # where g1, g2 are complex: g = g_re + i*g_im
+            integral = box.pixel_volume * (
+                np.sum(g1_re * g2_re - g1_im * g2_im)
+                + 1j * np.sum(g1_re * g2_im + g1_im * g2_re)
+            )
+
+            # Y_{l3,m3}(hat s)
+            ylm_s = scipy.special.sph_harm_y(l3, m3, theta_s, phi_s)
+
+            result += w3j * ylm_s * integral
+
+    return C * result
 
 
 if __name__ == '__main__':

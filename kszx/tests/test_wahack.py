@@ -1,4 +1,5 @@
 from . import helpers
+from .. import Box
 from .. import wahack
 from .. import core
 from .. import cpp_kernels
@@ -192,7 +193,63 @@ def Q_slow(box, f1, f2, l1, l2, l3, s):
     return C * result
 
 
+def random_l1l2l3(lmax=6):
+    """Generate random (l1, l2, l3) with l_i <= lmax, even sum, and triangle inequality."""
+    while True:
+        l1 = np.random.randint(0, lmax + 1)
+        l2 = np.random.randint(0, lmax + 1)
+        l3 = np.random.randint(abs(l1 - l2), l1 + l2 + 1)
+        if l3 > lmax:
+            continue
+        if (l1 + l2 + l3) % 2 != 0:
+            continue
+        return l1, l2, l3
+
+
+def test_Q_vs_Q_slow():
+    print('test_Q_vs_Q_slow(): start')
+
+    for _ in range(10):
+        # Small grid for speed (Q_slow is O(N^3)).
+        npix = np.array([np.random.randint(8, 16) for _ in range(3)])
+        pixsize = np.random.uniform(1.0, 10.0)
+
+        # Set cpos so that lpos = 0 (pixel position = pixsize * index).
+        # This ensures Y_{l3,m3}(hat s) is evaluated consistently in Q() and Q_slow().
+        cpos = 0.5 * (npix - 1) * pixsize
+        box = Box(npix, pixsize, cpos)
+
+        l1, l2, l3 = random_l1l2l3()
+
+        f1 = np.random.normal(size=box.real_space_shape)
+        f2 = np.random.normal(size=box.real_space_shape)
+
+        # Fourier-space Q.
+        vlm1 = wahack.Vlm(box, f1, [l1])
+        vlm2 = wahack.Vlm(box, f2, [l2])
+        Q_r, Q_s = wahack.Q(vlm1, vlm2, l1, l2, l3)
+
+        # Random nonzero displacement (pixel units).
+        while True:
+            s = np.array([np.random.randint(0, n) for n in npix])
+            if not np.all(s == 0):
+                break
+
+        Q_fourier = Q_r[s[0], s[1], s[2]] + 1j * Q_s[s[0], s[1], s[2]]
+        Q_real = Q_slow(box, f1, f2, l1, l2, l3, s)
+
+        num = abs(Q_fourier - Q_real)
+        den = abs(Q_fourier) + abs(Q_real)
+        eps = (num / den) if (den > 0) else 0.0
+
+        print(f'  l1={l1} l2={l2} l3={l3}, s={s}, eps={eps:.2e}')
+        assert eps < 1.0e-10, f'test_Q_vs_Q_slow failed: eps={eps}'
+
+    print('test_Q_vs_Q_slow(): pass')
+
+
 if __name__ == '__main__':
     test_flatten_real()
     test_flatten_fourier()
+    test_Q_vs_Q_slow()
 

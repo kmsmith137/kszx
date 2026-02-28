@@ -105,6 +105,30 @@ def multiply_ylm_real_space(box, arr, l, m):
     return re, im
 
 
+def translate_cyclic(arr, s):
+    """Cyclically translate an N-dimensional array by integer shift vector s.
+
+    Returns an array 'out' satisfying:
+        out[i_0, ..., i_{N-1}] = arr[(i_0 + s_0) % n_0, ..., (i_{N-1} + s_{N-1}) % n_{N-1}]
+    """
+
+    arr = np.asarray(arr)
+    s = np.asarray(s)
+
+    if arr.ndim == 0:
+        raise ValueError('translate_cyclic: arr must have ndim >= 1')
+    if s.shape != (arr.ndim,):
+        raise ValueError(f'translate_cyclic: expected s.shape=({arr.ndim},), got s.shape={s.shape}')
+    if not np.issubdtype(s.dtype, np.integer):
+        raise TypeError(f'translate_cyclic: s must be integer-valued, got dtype={s.dtype}')
+
+    ret = arr
+    for axis in range(arr.ndim):
+        ret = np.roll(ret, -int(s[axis]), axis=axis)
+
+    return ret
+
+
 if __name__ == '__main__':
     test_flatten_real()
     test_flatten_fourier()

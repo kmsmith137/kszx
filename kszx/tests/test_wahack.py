@@ -1,6 +1,7 @@
 from . import helpers
 from .. import wahack
 from .. import core
+from .. import cpp_kernels
 
 import numpy as np
 
@@ -70,6 +71,38 @@ def test_flatten_fourier():
         assert eps < 1.0e-10
 
     print('test_flatten_fourier(): pass')
+
+
+def multiply_ylm_real_space(box, arr, l, m):
+    """Multiply real-space map 'arr' by Y_{lm}(\\hat x), returning (re, im).
+
+    Here arr, re, im are real-valued real-space maps, and
+    arr * Y_{lm}(\\hat x) = re + i*im.
+    """
+
+    lp = (box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize)
+    re = np.empty(box.real_space_shape, dtype=float)
+    im = np.empty(box.real_space_shape, dtype=float)
+
+    if m == 0:
+        # Y_{l0} = y_{l0}, which is real.
+        coeff = np.sqrt((2*l+1) / (4*np.pi))
+        cpp_kernels.multiply_xli_real_space(re, arr, l, 0, *lp, coeff, False)
+        im = np.zeros(box.real_space_shape, dtype=float)
+    elif m > 0:
+        # Y_{lm} = y_{l,2m-1} + i*y_{l,2m}
+        coeff = np.sqrt((2*l+1) / (8*np.pi))
+        cpp_kernels.multiply_xli_real_space(re, arr, l, 2*m-1, *lp, coeff, False)
+        cpp_kernels.multiply_xli_real_space(im, arr, l, 2*m, *lp, coeff, False)
+    else:  # m < 0
+        # Y_{l,-am} = (-1)^am * (y_{l,2am-1} - i*y_{l,2am})
+        am = abs(m)
+        sign = (-1)**am
+        coeff = sign * np.sqrt((2*l+1) / (8*np.pi))
+        cpp_kernels.multiply_xli_real_space(re, arr, l, 2*am-1, *lp, coeff, False)
+        cpp_kernels.multiply_xli_real_space(im, arr, l, 2*am, *lp, -coeff, False)
+
+    return re, im
 
 
 if __name__ == '__main__':

@@ -152,7 +152,7 @@ def test_fft_transposes():
         Fx = core.fft_r2c(box, x, spin=spin)
         Fy = core.fft_c2r(box, y, spin=spin)
 
-        mdot = lambda v,w: helpers.map_dot_product(box,v,w)
+        mdot = lambda v,w: core.map_dot_product(box,v,w)
         dot1 = mdot(y,Fx)
         dot2 = mdot(Fy,x)
         den = mdot(y,y)*mdot(Fx,Fx) + mdot(Fx,Fx)*mdot(y,y)

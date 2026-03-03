@@ -50,7 +50,12 @@ from . import desi
 from . import desils_lrg
 from . import desils_main
 from . import planck
+from . import quijote
 from . import sdss
+
+# Utility modules for specific data formats.
+from . import gadget_utils
+from . import globus_utils
 
 # Hacking for ML paper -- interfaces may change in the future
 from . import mlhack

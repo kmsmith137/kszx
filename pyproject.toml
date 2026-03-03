@@ -4,6 +4,9 @@ version = "0.0.15"
 requires-python = ">= 3.11"
 dependencies = [ 'scipy', 'matplotlib', 'h5py', 'wget', 'astropy', 'camb', 'healpy', 'fitsio', 'pixell', 'numba' ]
 
+[project.optional-dependencies]
+quijote = ['globus-sdk', 'hdf5plugin']
+
 [build-system]
 requires = [ "setuptools>=61.0", "pybind11>=2.10", "numpy" ]
 build-backend = "setuptools.build_meta"

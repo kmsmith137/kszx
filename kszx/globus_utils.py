@@ -178,11 +178,15 @@ def globus_download(source_endpoint, remote_path, local_abspath,
 
     os.makedirs(os.path.dirname(local_abspath), exist_ok=True)
 
+    # Disable Globus email notifications (success/fail/inactive).
     tdata = globus_sdk.TransferData(
         source_endpoint=source_endpoint,
         destination_endpoint=local_ep,
         label=label or f'kszx: {remote_path}',
         sync_level='checksum',
+        notify_on_succeeded=False,
+        notify_on_failed=False,
+        notify_on_inactive=False,
     )
     tdata.add_item(remote_path, gcp_path, recursive=recursive)
 
@@ -222,11 +226,15 @@ def globus_download_batch(source_endpoint, items, label=None):
     tc = get_transfer_client()
     local_ep = get_local_endpoint_id()
 
+    # Disable Globus email notifications (success/fail/inactive).
     tdata = globus_sdk.TransferData(
         source_endpoint=source_endpoint,
         destination_endpoint=local_ep,
         label=label or 'kszx bulk download',
         sync_level='checksum',
+        notify_on_succeeded=False,
+        notify_on_failed=False,
+        notify_on_inactive=False,
     )
 
     for remote_path, local_abspath, recursive in items:

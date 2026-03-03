@@ -30,7 +30,7 @@ def main():
     pk = kszx.quijote.read_pk(sim_type, realization, redshift, space='real')
 
     zstr = f'{redshift:g}'
-    path = kszx.quijote._quijote_path(f'Pk/{sim_type}/{realization}/Pk_m_z={zstr}.txt')
+    path = kszx.quijote._quijote_path(f'Pk/matter/{sim_type}/{realization}/Pk_m_z={zstr}.txt')
     raw = np.loadtxt(path)
     k_expected = raw[:, 0] * h         # h/Mpc -> Mpc^-1
     pk_expected = raw[:, 1] / h**3     # (Mpc/h)^3 -> Mpc^3
@@ -43,7 +43,7 @@ def main():
     try:
         pk_rsd = kszx.quijote.read_pk(sim_type, realization, redshift, space='redshift')
         path_rsd = kszx.quijote._quijote_path(
-            f'Pk/{sim_type}/{realization}/Pk2D_m_z={zstr}_axis=z.txt')
+            f'Pk/matter/{sim_type}/{realization}/Pk_m_RS2_z={zstr}.txt')
         raw_rsd = np.loadtxt(path_rsd)
 
         np.testing.assert_allclose(pk_rsd['k'], raw_rsd[:, 0] * h, rtol=1e-10,

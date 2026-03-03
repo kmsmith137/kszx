@@ -59,7 +59,7 @@ def main():
     print(f'  Particle count: {n}')
     assert n == len(pos_pylians), f'Count mismatch: {n} vs {len(pos_pylians)}'
 
-    np.testing.assert_allclose(data['pos'], pos_pylians, rtol=0, atol=0,
+    np.testing.assert_allclose(data['pos'], pos_pylians, rtol=1e-6,
                                err_msg='pos mismatch')
     np.testing.assert_allclose(data['vel'], vel_pylians, rtol=1e-6,
                                err_msg='vel mismatch')

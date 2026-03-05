@@ -26,13 +26,13 @@ class Vlm:
 
     Description
     -----------
-    
-    Recall that V_{lm}(k) is defined by    
-      V_{lm}(k) = (4pi)^{1/2} int_x e^{-ik.x} f(x) Y_{lm}(\hat x)
-    
+
+    Recall that V_{lm}(k) is defined by
+      V_{lm}(k) = int_x e^{-ik.x} f(x) Y_{lm}(\hat x)
+
     and satisfies:
       V_{l,-m}(k) = (-1)^m V_{lm}(-k)^*
-    
+
     In implementation, it's convenient to work in a real basis.
     For 0 <= i <= 2l, define real spherical harmonics y_{li} by:
        Y_{l0}      for i=0
@@ -40,11 +40,11 @@ class Vlm:
        Im(Y_{lm})  for i=2m
 
     Define v_{li}(k) by:
-      v_{li}(k) = (4pi)^{1/2} int_x e^{-ik.x} f(x) y_{li}(\hat x)
-    
+      v_{li}(k) = int_x e^{-ik.x} f(x) y_{li}(\hat x)
+
     Then v_{li}(k) is "real", in the sense that:
       v_{li}(-k) = v_{li}(k)^*
-    
+
     This is convenient because v_{li} can be represented as an "ordinary" Fourier-space map.
 
     The V_{lm}(k) maps are given in terms of v_{li}(k) as follows:
@@ -65,8 +65,8 @@ class Vlm:
             for i in range(2*l + 1):
                 # multiply_xli_real_space multiplies by X_{li}, but we need Z_{li} (unnormalized).
                 # X_{l0} = sqrt(4pi/(2l+1)) * Z_{l0}, X_{li} = sqrt(8pi/(2l+1)) * Z_{li} for i>0.
-                # We want sqrt(4pi) * FFT(f * Z_{li}) = sqrt(4pi)/c_{li} * FFT(f * X_{li}).
-                coeff = np.sqrt(2*l + 1) if (i == 0) else np.sqrt((2*l + 1) / 2.0)
+                # We want FFT(f * Z_{li}) = (1/c_{li}) * FFT(f * X_{li}).
+                coeff = np.sqrt((2*l + 1) / (4*np.pi)) if (i == 0) else np.sqrt((2*l + 1) / (8*np.pi))
                 cpp_kernels.multiply_xli_real_space(tmp, f, l, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, coeff, False)
                 self.vli[(l,i)] = core.fft_r2c(box, tmp)
 

@@ -6,15 +6,45 @@ from . import utils
 import numpy as np
 
 
+class Coeffs:
+    def __init__(self, l1E, l2E, l1S, l2S):
+        r"""
+        Precomputes coefficients needed to compute estimator response.
+
+        The coefficient is a function of nine l-values (l1E,l2E,l3E,l1S,l2S,l3S,L1,L2,L3)
+        and is defined by:
+        
+           (4\pi)^2 (2L3+1) 
+             sqrt[ (2*l3E+1) (2*l3S+1) (2L1+1) (2L2+1) ]
+             C_{l1E,l2E,l3E} C_{l1S,l2S,l3S} C_{l1E,l1S,L1} C_{l2E,l2S,L2}
+             ninej[ l1E l2E l3E \\ l1S l2S l3S \\ L1 L2 L3 ]
+        
+        It arises in the first boxed equation in the "main calculation" section
+        ("winbox1" in the tex).
+
+        The constructor initializes:
+
+          - self.map5: dict (l3E,l3S,L1,L2,L3) -> (floating-point coeff above)
+              Only nonzero coeffs are tabulated!
+        
+          - self.l3E_vals: sorted list of all l3E-values arising in self.map5.
+          - self.l3S_vals: sorted list of all l3ES-values arising in self.map5.
+          - self.L1_vals: sorted list of all L1-values arising in self.map5.
+          - self.L2_vals: sorted list of all L2-values arising in self.map5.
+        """
+
+        pass
+        
+
 class Vlm:
-    """
+    r"""
     Computes Fourier-space maps V_{lm}(k), given real-space map f(x) and set of l-values.
 
     Constructor arguments
     ---------------------
 
       - box: instance of class Box
-      - f: real-space map
+      - f: real-space map (W*F in notation from the paper)
       - ls: set of nonnegative integers
 
     Members
@@ -22,7 +52,7 @@ class Vlm:
 
       - self.box: the Box instance
       - self.ls: sorted list of l-values
-      - self.vli: dictionary (l,i) -> Fourier-space map, where 0 <= i <= 2l, see below.
+      - self.pli: dictionary (l,i) -> Fourier-space map, where 0 <= i <= 2l, see below.
 
     Description
     -----------
@@ -92,8 +122,61 @@ class Vlm:
         return alpha, beta
 
 
+class Plm:
+    def __init__(self, box, pk, ls):
+        r"""
+        Computes real-space maps P_{lm}(s), given Fourier-space map P(k) and set of l-values.
+
+        Constructor arguments
+        ---------------------
+
+          - box: instance of class Box
+          - pk: self-conjgate Fourier space map, either P(k) or -iP(k), see below.
+          - ls: set of nonnegative integers
+
+        Members
+        -------
+
+          - self.box: the Box instance
+          - self.pk: self-conjugate Fourier-space map, see below.
+          - self.ls: sorted list of l-values
+          - self.vli: dictionary (l,i) -> Fourier-space map, where 0 <= i <= 2l, see below.
+
+        Description
+        -----------
+
+        Recall the definition:
+           \tilde P_{lm}(s) = \int_k e^{ik.s} P(k) Y_{\ell m}^*(s)
+
+        We assume that P(k) satisfies:
+           P(-k)^* = (-1)^l P(k)
+
+        which implies that P_{lm}(s) satisfies:
+           P_{lm}^*(s) = (-1)^m P_{l,-m}(s)
+        
+        The 'pk' constructor arg is P(k) if l is even, or (-iP(k)) if l is odd.
+        This ensures that 'pk' is always self-conjugate (i.e. pk[-k]^* = pk[k]).
+        This is convenient, since most kszx functions (e.g. core.fft_c2r() operate
+        on self-conjugate Fourier-space maps.
+
+        For this to make sense, l-values in 'ls' must either be all-even, or all-odd.
+        We throw an exception otherwise.
+
+        As in 'class Vlm' it's convenient to work in a real basis.
+        FIXME -- incomplete
+        """
+
+        # Calls cpp_kernels.multiply_xli_real_space() and core.fft_c2r().
+        pass
+
+    
+    def plm_components(self, l, m):
+        """Returns pair (Re P_{lm}(s), Im P_{lm}(s))."""
+        pass
+    
+    
 def Qlllm(vlm1, vlm2, l1, l2, l3, m3):
-    """
+    r"""
     Compute Q^{L1,L2}_{L3,M3}(x), and return it as a pair (r,s) of real-valued real-space maps.
 
     Recall the definition:
@@ -147,6 +230,40 @@ def Qlllm(vlm1, vlm2, l1, l2, l3, m3):
     r = core.fft_c2r(box, r)
     s = core.fft_c2r(box, s)
     return r, s
+    
+
+def hP_mean(box, U, P, vlm1, vlm2, l1E, l2E, l1S, l2S):
+    r"""
+    Computes <\hat P> for a single rank-one estimator and rank-one signal.
+
+    Implements the first "boxed" equation in the "main calculation" section,
+    given as a sum over (l3E, l3S, L1, L2, L3, m3E, m3S, M3).
+
+    Note that the Fourier-space weighting U(k) and signal power P(k) must satsify:
+
+       U(-k)^* = (-1)^{l1E + l2E} U(k)
+       P(-k)^* = (-1)^{l1S + l2S} P(k)
+
+    The 'U' argument is U(k) if (l1E+l2E) is even, or (-iU(k)) if (l1E+l2E) is
+    odd. This convention ensures that the 'U' argument is always a self-conjugate
+    map (U(-k)^* = U(k)). This is convenient, since most kszx functions (e.g.
+    core.fft_c2r() assume that Fourier-space maps are self-conjugate).
+
+    The 'P' argument works the sampe way, with sign determined by (l1S+l2S).
+
+    Current implementation is a brute-force sum, organized for code clarity
+    not speed. We call 
+    
+    Arguments:
+    
+      - U: Self-conjugate Fourier-space map, either U(k) or -iU(k)
+    
+      - P: Self-conjugate Fourier-space map, either P(k) or -iP(k)
+    
+      - vlm1, vlm2: instance of class Vlm, representing 
+    """
+
+    pass
 
 
 ####################################################################################################

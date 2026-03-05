@@ -16,27 +16,27 @@ struct cubic_axis
 
     inline cubic_axis(double x, long n, long stride, bool periodic)
     {
-    x = periodic ? xfmod(x,n) : x;
+        x = periodic ? xfmod(x,n) : x;
     
-    long i = long(x);
-    bool good = periodic || ((i >= 1) && (i <= n-3));
+        long i = long(x);
+        bool good = periodic || ((i >= 1) && (i <= n-3));
     
-    if (_unlikely(!good))
-        throw runtime_error("kszx: point is out of bounds in interpolate_points() or grid_points()");
+        if (_unlikely(!good))
+            throw runtime_error("kszx: point is out of bounds in interpolate_points() or grid_points()");
     
-    i = std::max(i, 0L);   // unnecessary?
-    i = std::min(i, n-1);  // unnecessary?
-    double f = x - (double)i;
-    
-    this->w0 = -(f)*(f-1)*(f-2) / 6.0;
-    this->w1 = (f+1)*(f-1)*(f-2) / 2.0;
-    this->w2 = -(f+1)*(f)*(f-2) / 2.0;      
-    this->w3 = (f+1)*(f)*(f-1) / 6.0;
-    
-    this->i0 = stride * wrap_lo(i-1,n);
-    this->i1 = stride * i;
-    this->i2 = stride * wrap_hi(i+1,n);
-    this->i3 = stride * wrap_hi(i+2,n);
+        i = std::max(i, 0L);   // unnecessary?
+        i = std::min(i, n-1);  // unnecessary?
+        double f = x - (double)i;
+        
+        this->w0 = -(f)*(f-1)*(f-2) / 6.0;
+        this->w1 = (f+1)*(f-1)*(f-2) / 2.0;
+        this->w2 = -(f+1)*(f)*(f-2) / 2.0;      
+        this->w3 = (f+1)*(f)*(f-1) / 6.0;
+        
+        this->i0 = stride * wrap_lo(i-1,n);
+        this->i1 = stride * i;
+        this->i2 = stride * wrap_hi(i+1,n);
+        this->i3 = stride * wrap_hi(i+2,n);
     }
 };
 
@@ -75,21 +75,21 @@ py::array_t<double> cubic_interpolate_3d(py::array_t<const double> &grid, py::ar
     interpolation_args<const double> args(grid, points, lpos0, lpos1, lpos2, pixsize);
     
     if ((args.gn0 < 4) || (args.gn1 < 4) || (args.gn2 < 4))
-    throw runtime_error("kszx.interpolate_points('cubic'): all grid dimensions must be >= 4");
-
+        throw runtime_error("kszx.interpolate_points('cubic'): all grid dimensions must be >= 4");
+    
     py::array_t<double> ret({args.npoints});
     double *rdata = ret.mutable_data();
 
 #pragma omp parallel for schedule(guided,32)
     for (long i = 0; i < args.npoints; i++) {
-    double x, y, z;
-    args.get_xyz(i, x, y, z);
-
-    cubic_axis ax0(x, args.gn0, args.gs0, periodic);
-    cubic_axis ax1(y, args.gn1, args.gs1, periodic);
-    cubic_axis ax2(z, args.gn2, args.gs2, periodic);
-
-    rdata[i] = cubic_interp_3d(ax0, ax1, ax2, args.gdata);
+        double x, y, z;
+        args.get_xyz(i, x, y, z);
+        
+        cubic_axis ax0(x, args.gn0, args.gs0, periodic);
+        cubic_axis ax1(y, args.gn1, args.gs1, periodic);
+        cubic_axis ax2(z, args.gn2, args.gs2, periodic);
+        
+        rdata[i] = cubic_interp_3d(ax0, ax1, ax2, args.gdata);
     }
 
     return ret;
@@ -131,16 +131,16 @@ void cubic_grid_3d(py::array_t<double> &grid, py::array_t<const double> &points,
     interpolation_args<double> args(grid, points, weights, wscal, lpos0, lpos1, lpos2, pixsize);
     
     if ((args.gn0 < 4) || (args.gn1 < 4) || (args.gn2 < 4))
-    throw runtime_error("kszx.grid_points('cubic'): all grid dimensions must be >= 4");
+        throw runtime_error("kszx.grid_points('cubic'): all grid dimensions must be >= 4");
 
     for (long i = 0; i < args.npoints; i++) {
-    double x, y, z, w;
-    args.get_xyzw(i, x, y, z, w);
+        double x, y, z, w;
+        args.get_xyzw(i, x, y, z, w);
     
-    cubic_axis ax0(x, args.gn0, args.gs0, periodic);
-    cubic_axis ax1(y, args.gn1, args.gs1, periodic);
-    cubic_axis ax2(z, args.gn2, args.gs2, periodic);
-    
-    cubic_grid_3d(ax0, ax1, ax2, args.gdata, w);
+        cubic_axis ax0(x, args.gn0, args.gs0, periodic);
+        cubic_axis ax1(y, args.gn1, args.gs1, periodic);
+        cubic_axis ax2(z, args.gn2, args.gs2, periodic);
+        
+        cubic_grid_3d(ax0, ax1, ax2, args.gdata, w);
     }
 }

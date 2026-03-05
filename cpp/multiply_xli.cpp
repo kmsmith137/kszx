@@ -1,3 +1,13 @@
+// multiply_xli_{real,fourier}_space():
+//
+// Multiply a 3-d grid (real-space or Fourier-space) by X_{li}(hat{n}),
+// the real spherical harmonics used in the decomposition:
+//
+//   P_l(khat . rhat) = sum_{i=0}^{2l} X_{li}(khat) X_{li}(rhat)
+//
+// This decomposition allows spin-l FFTs to be written as a sum of
+// (2l+1) ordinary FFTs. See "FFT implementation notes" in fft.rst.
+//
 // FIXME the functions multiply_xli_{real,fourier}_space() aren't
 // super well optimized.
 //
@@ -11,13 +21,6 @@
 // I haven't tried diagnosing the slowness, but I bet it would help
 // to introduce some length-4 (or length-8?) arrays, to help the
 // compiler emit simd instructions.
-//
-// For more info on what these functions compute, see "FFT implementation"
-// in the sphinx docs:
-//
-//   https://kszx.readthedocs.io/en/latest/fft.html#fft-implementation
-//
-// or the reference implementation in kszx/tests/test_fft.py.
 
 #include <omp.h>
 #include <cmath>
@@ -28,87 +31,118 @@ using namespace std;
 static constexpr int Lmax = 8;
 
 
+// Precomputes normalization and recurrence coefficients for evaluating
+// X_{li}(nhat), the real spherical harmonic at degree l, index i.
+//
+// Index i maps to azimuthal order m = (i+1)/2. The angular part is
+// Re((x+iy)^m) if i = 2m-1, or Im((x+iy)^m) if i = 2m (for m >= 1).
+// For m = 0 (i = 0), the angular part is just 1.
+
 struct xlm_helper
 {
-    int l;   // 0 <= l <= lmax
-    int i;
-    int m;
-    bool reim;
+    int l;   // target degree, 0 <= l <= Lmax
+    int i;   // real spherical harmonic index, 0 <= i < 2l+1
+    int m;   // azimuthal order, m = (i+1)/2
+    bool reim;  // false = Re((x+iy)^m), true = Im((x+iy)^m)
 
-    double C = 0.0;
-    double eps_rec[Lmax+1];   // (1 / eps_l)
-    double eps_rat[Lmax+1];   // (eps_{l-1} / eps_l)
+    double C = 0.0;                // normalization for starting the recurrence at l = m
+    double alpha_rec[Lmax+1];      // alpha_rec[l] = 1 / alpha_l
+    double alpha_rat[Lmax+1];      // alpha_rat[l] = alpha_{l-1} / alpha_l
 
     xlm_helper(int l_, int i_)
     {
         l = l_;
         i = i_;
-        
+
         // FIXME throw exceptions
         assert(l >= 0);
         assert(l <= Lmax);
         assert(i >= 0);
         assert(i < 2*l+1);
-        
+
         m = (i+1)/2;
         reim = (m > 0) && (i == 2*m);
-        
+
+        // Compute normalization constant C such that, on the unit sphere:
+        //   C * Re/Im((x+iy)^m) = X_{l=m, i}(nhat)
+        //
+        // Since the three-term recurrence is linear and preserves
+        // the normalization, this initial value at l=m propagates
+        // correctly to give X_{l,i} at the target l.
+        //
+        // C^2 = [m>0 ? 2 : 1] / (2l+1) * prod_{j=1}^{m} (2j+1)/(2j)
+        // Sign: (-1)^m (Condon-Shortley phase).
+
         C = (m > 0) ? 2 : 1;
         C /= (2*l+1);
-        
+
         for (int j = 1; j <= m; j++)
             C *= (1.0 + 1.0/(2*j));
-        
+
         C = sqrt(C);
         C = (m & 1) ? (-C) : C;
-        
-        for (int l = 0; l <= m; l++)
-            eps_rec[l] = eps_rat[l] = 0.0;
-        
-        double eps_prev = 0.0;
-        for (int l = m+1; l <= Lmax; l++) {
-            double num = l*l - m*m;
-            double den = 4*l*l - 1;
-            double eps = sqrt(num/den);
-            
-            eps_rec[l] = 1.0 / eps;
-            eps_rat[l] = eps_prev / eps;
-            eps_prev = eps;
+
+        // Precompute recurrence coefficients alpha_l = sqrt((l^2 - m^2) / (4l^2 - 1)).
+        // alpha_l = 0 for l <= m (recurrence starts at l = m).
+
+        for (int j = 0; j <= m; j++)
+            alpha_rec[j] = alpha_rat[j] = 0.0;
+
+        double alpha_prev = 0.0;
+        for (int ll = m+1; ll <= Lmax; ll++) {
+            double num = ll*ll - m*m;
+            double den = 4*ll*ll - 1;
+            double alpha = sqrt(num/den);
+
+            alpha_rec[ll] = 1.0 / alpha;
+            alpha_rat[ll] = alpha_prev / alpha;
+            alpha_prev = alpha;
         }
     }
     
+    // Evaluate X_{li}(nhat) where nhat = (x,y,z)/|(x,y,z)|.
     inline double get(double x, double y, double z)
     {
+        // Step 1: normalize (x,y,z) to a unit vector.
         // FIXME does this compile to a fast x86 rsqrt instruction?
         double t = 1.0 / sqrt(x*x + y*y + z*z);
         x *= t;
         y *= t;
         z *= t;
-    
-        // e = (x+iy)^m
-        
+
+        // Step 2: compute e = (x+iy)^m.
         double ere = 1.0;
         double eim = 0.0;
-        
+
         for (int mm = 0; mm < m; mm++) {
             double new_ere = ere*x - eim*y;
             double new_eim = ere*y + eim*x;
             ere = new_ere;
-            eim = new_eim;      
+            eim = new_eim;
         }
-        
+
+        // Step 3: initialize recurrence at l = m.
+        // On the unit sphere, Re/Im((x+iy)^m) = sin^m(theta) * cos/sin(m*phi).
+        // C is chosen so that C * Re/Im((x+iy)^m) = X_{m,i}(nhat).
         double xli = C * (reim ? eim : ere);
         double xli_prev = 0.0;
-        
-        // FIXME renormalization
-        
+
+        // Step 4: three-term recurrence from l=m up to the target l.
+        //
+        //   X_{l+1} = (z / alpha_{l+1}) * X_l - (alpha_l / alpha_{l+1}) * X_{l-1}
+        //
+        // where alpha_l = sqrt((l^2 - m^2) / (4l^2 - 1)).
+        // This is the standard recurrence for normalized associated
+        // Legendre functions, applied to X_{li}(nhat).
+        //
+        // FIXME renormalization (for numerical stability at large l)
+
         for (int ll = m; ll < l; ll++) {
-            // ll -> (ll+1)
-            double xli_next = (eps_rec[ll+1] * z * xli) - (eps_rat[ll+1] * xli_prev);
+            double xli_next = (alpha_rec[ll+1] * z * xli) - (alpha_rat[ll+1] * xli_prev);
             xli_prev = xli;
             xli = xli_next;
         }
-        
+
         return xli;
     }
 };
@@ -149,7 +183,8 @@ struct grid_helper
 // -------------------------------------------------------------------------------------------------
 
 
-// Called for l=0.
+// Special case for l=0: X_{00}(nhat) = 1, so this just copies src to
+// dst with a scalar coefficient. If Accum=true, adds to dst instead.
 template<bool Accum, typename T>
 inline void _multiply_x00(grid_helper<T> &dst, grid_helper<const T> &src, T coeff)
 {
@@ -172,6 +207,10 @@ inline void _multiply_x00(grid_helper<T> &dst, grid_helper<const T> &src, T coef
 }
 
 
+// Multiply a real-space grid by coeff * X_{li}(rhat), where rhat is the
+// unit vector from the observer to each grid point. Observer position
+// is implicitly at (lpos0, lpos1, lpos2) - (i0,i1,i2)*pixsize.
+// If Accum=true, adds to dst; otherwise overwrites dst.
 template<bool Accum>
 inline void _multiply_xli_real_space(grid_helper<double> &dst, grid_helper<const double> &src, xlm_helper &h, double lpos0, double lpos1, double lpos2, double pixsize, double coeff)
 {
@@ -203,6 +242,8 @@ inline void _multiply_xli_real_space(grid_helper<double> &dst, grid_helper<const
 }
 
 
+// Python-facing wrapper: multiply a real-space grid by coeff * X_{li}(rhat).
+// (lpos0, lpos1, lpos2) define the observer-relative position of grid point (0,0,0).
 void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double> &src_, int l, int i, double lpos0, double lpos1, double lpos2, double pixsize, double coeff, bool accum)
 {
     grid_helper<double> dst(dst_);
@@ -221,17 +262,26 @@ void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double
 }
 
 
+// Multiply a Fourier-space grid by coeff * X_{li}(khat), where khat is the
+// direction of the wavevector at each grid point. The grid has rfft
+// layout: shape (n0, n1, nz/2+1), where nz is the real-space size
+// along the last axis. DC and Nyquist modes are zeroed for l > 0
+// (X_{li} is undefined at k=0 and ill-defined at Nyquist).
+// If Accum=true, adds to dst; otherwise overwrites dst.
 template<bool Accum>
 inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_helper<const complex<double>> &src, xlm_helper &h, long nz, complex<double> coeff)
 {
     if (h.l == 0) {
-        // Note that for l=0, we don't zero the DC/nyquist modes.
+        // For l=0, X_{00} = 1 everywhere, so just scale. No DC/Nyquist zeroing.
         _multiply_x00<Accum> (dst, src, coeff);
         return;
     }
 
     double rec_nz = 1.0 / nz;
-    
+
+    // Map grid indices to wavevector components (proportional to k).
+    // Axes 0,1: wrap indices > n/2 to negative frequencies.
+    // Axis 2 (rfft): indices are non-negative, range [0, nz/2].
 #pragma omp parallel for
     for (long i0 = 0; i0 < dst.n0; i0++) {
         double x = (2*i0 > dst.n0) ? (i0 - dst.n0) : (i0);
@@ -261,6 +311,12 @@ inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_
 }
 
 
+// Python-facing wrapper: multiply a Fourier-space grid by coeff * X_{li}(khat).
+// nz is the real-space grid size along the last axis (needed because the
+// rfft output shape nz/2+1 doesn't uniquely determine nz).
+//
+// The coeff must be purely real for even l, or purely imaginary for odd l,
+// consistent with the epsilon_l convention (epsilon_l = i for odd l, 1 for even l).
 void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<const complex<double>> &src_, int l, int i, long nz, complex<double> coeff, bool accum)
 {
     grid_helper<complex<double>> dst(dst_);
@@ -271,9 +327,10 @@ void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<
         throw std::runtime_error("expected dst/src maps to have the same shapes");
     if (dst.n2 != (nz/2)+1)
         throw std::runtime_error("dst/src map shape is inconsistent with 'nz' argument");
-    
+
+    // Validate that coeff respects the epsilon_l parity constraint.
     double x = (l & 1) ? coeff.real() : coeff.imag();
-    
+
     if (x != 0.0) {
         std::stringstream ss;
         ss << "multiply_xli_fourier_space(l=" << l << "): expected coeff."

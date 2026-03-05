@@ -62,22 +62,22 @@ FFTs with nonzero "spin"
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
  - We define spin-1 Fourier transforms by inserting an extra factor
-   $\epsilon P_l({\hat k} \cdot {\hat r})$:
+   $\epsilon_l P_l({\hat k} \cdot {\hat r})$:
 
    $$\begin{align}
-   f(k) &= V_{pix} \sum_x \epsilon^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x} \\
-   f(x) &= V_{box}^{-1} \sum_k \epsilon P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x}
+   f(k) &= V_{pix} \sum_x \epsilon_l^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x} \\
+   f(x) &= V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x}
    \end{align}$$
 
    where the line-of-sight direction $\hat r$ is defined in "observer coordinates"
-   (see :class:`~kszx.Box` for more info), and our convention for the phase $\epsilon$ is:
+   (see :class:`~kszx.Box` for more info), and our convention for the phase $\epsilon_l$ is:
    
-   $$\epsilon = \begin{cases}
+   $$\epsilon_l = \begin{cases}
    i & \mbox{if $l$ is odd} \\
    1 & \mbox{if $l$ is even}
    \end{cases}$$
 
-   (Note that $\epsilon$ must be real for even $l$, and imaginary for odd $l$, in order
+   (Note that $\epsilon_l$ must be real for even $l$, and imaginary for odd $l$, in order
    for the spin-$l$ FFT to preserve the real-valued conditions $f(x)^* = f(x)$ and
    $f(k)^* = f(-k)$.)
    
@@ -181,7 +181,7 @@ FFTs with nonzero "spin"
    (In a real pipeline, you'd want to apply power spectrum normalization -- see for example
    :func:`kszx.wfunc_utils.compute_wapprox()`. This exmaple code is intended to illustrate
    low-level building blocks: :func:`~kszx.fft_r2c()` and :func:`~kszx.estimate_power_spectrum()`.
-   Additionally, our normalization differs from 1704.02357 by the factor $\epsilon$ defined
+   Additionally, our normalization differs from 1704.02357 by the factor $\epsilon_l$ defined
    above.)
    
  - In addition to :func:`~kszx.fft_r2c()` and :func:`~kszx.fft_c2r()`, the ``spin``
@@ -209,6 +209,6 @@ Then the spin-$l$ FFT can be written as a sum of $(2l+1)$ ordinary (spin-0) FFTs
 We write this out explicitly for the c2r transform:
 
 $$\begin{align}
-f(x) &= V_{box}^{-1} \sum_k \epsilon P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x} \\
-&= \epsilon V_{box}^{-1} \sum_{i=0}^{2l} X_{li}(x) \sum_k X_{li}(k) f(k) e^{ik\cdot x}
+f(x) &= V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x} \\
+&= \epsilon_l V_{box}^{-1} \sum_{i=0}^{2l} X_{li}(x) \sum_k X_{li}(k) f(k) e^{ik\cdot x}
 \end{align}$$

@@ -44,16 +44,16 @@ def fft_r2c(box, arr, spin=0, threads=None):
           $$f(x) = V_{box}^{-1} \sum_k f(k) e^{ik\cdot x}$$
 
        - We define spin-l Fourier transforms by inserting an extra factor
-         $(\epsilon P_l({\hat k} \cdot {\hat r})$:
+         $(\epsilon_l P_l({\hat k} \cdot {\hat r})$:
 
-          $$f(k) = V_{pix} \sum_x \epsilon^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x}$$
+          $$f(k) = V_{pix} \sum_x \epsilon_l^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x}$$
 
-          $$f(x) = V_{box}^{-1} \sum_k \epsilon P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x}$$
+          $$f(x) = V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x}$$
 
          where the line-of-sight direction $\hat r$ is defined in "observer coordinates"
-         (see :class:`~kszx.Box` for more info), and our convention for the phase $\epsilon$ is:
+         (see :class:`~kszx.Box` for more info), and our convention for the phase $\epsilon_l$ is:
 
-          $$\epsilon = \begin{cases}
+          $$\epsilon_l = \begin{cases}
           i & \mbox{if $l$ is odd} \\
           1 & \mbox{if $l$ is even}
           \end{cases}$$
@@ -129,16 +129,16 @@ def fft_c2r(box, arr, spin=0, threads=None):
           $$f(x) = V_{box}^{-1} \sum_k f(k) e^{ik\cdot x}$$
 
        - We define spin-l Fourier transforms by inserting an extra factor
-         $(\epsilon P_l({\hat k} \cdot {\hat r})$:
+         $(\epsilon_l P_l({\hat k} \cdot {\hat r})$:
 
-          $$f(k) = V_{pix} \sum_x \epsilon^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x}$$
+          $$f(k) = V_{pix} \sum_x \epsilon_l^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x}$$
 
-          $$f(x) = V_{box}^{-1} \sum_k \epsilon P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x}$$
+          $$f(x) = V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x}$$
 
          where the line-of-sight direction $\hat r$ is defined in "observer coordinates"
-         (see :class:`~kszx.Box` for more info), and our convention for the phase $\epsilon$ is:
+         (see :class:`~kszx.Box` for more info), and our convention for the phase $\epsilon_l$ is:
 
-          $$\epsilon = \begin{cases}
+          $$\epsilon_l = \begin{cases}
           i & \mbox{if $l$ is odd} \\
           1 & \mbox{if $l$ is even}
           \end{cases}$$
@@ -149,7 +149,7 @@ def fft_c2r(box, arr, spin=0, threads=None):
 
            https://kszx.readthedocs.io/en/latest/fft.html#ffts-with-spin
     """
-    
+
     assert isinstance(box, Box)
     assert box.is_fourier_space_map(arr)   # check shape and dtype of input array
 

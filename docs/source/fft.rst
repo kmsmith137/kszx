@@ -21,12 +21,12 @@ Real-space and Fourier-space maps
  - A real-space map is represented as a pair ``(box, numpy_array)``, where ``box`` is an instance
    of class :class:`~kszx.Box`. The numpy array has ``float`` dtype and shape:
 
-   $$(\mbox{real-space shape}) = {\tt \mbox{box.real_space_shape}} = (n_0, n_1, \cdots, n_{d-1})$$
+   $$(\mbox{real-space shape}) = \mathtt{box.real\_space\_shape} = (n_0, n_1, \cdots, n_{d-1})$$
 
  - A Fourier-space map is represented as a pair ``(box, numpy_array)``, where ``box`` is an instance
    of class :class:`~kszx.Box`. The numpy array has ``complex`` dtype and shape:
 
-   $$(\mbox{Fourier-space shape}) = {\tt \mbox{box.fourier_space_shape}} = (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)$$
+   $$(\mbox{Fourier-space shape}) = \mathtt{box.fourier\_space\_shape} = (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)$$
 
  - Note that we define a Box class, but not a Map class (instead, we represent maps by ``(box,arr)`` pairs).
    For now, ``arr`` must be an ordinary numpy array, but in the future, we might support more fun possibilities
@@ -37,10 +37,8 @@ Fourier conventions and normalization
 
  - In :func:`~kszx.fft_c2r()` and :func:`~kszx.fft_r2c()`, we use the following Fourier conventions:
 
-   $$\begin{align}
-   f(k) &= V_{pix} \sum_x f(x) e^{-ik\cdot x} \\
-   f(x) &= V_{box}^{-1} \sum_k f(k) e^{ik\cdot x}
-   \end{align}$$
+   $$f(k) &= V_{pix} \sum_x f(x) e^{-ik\cdot x} \\
+   f(x) &= V_{box}^{-1} \sum_k f(k) e^{ik\cdot x}$$
 
  - In :func:`~kszx.simulate_gaussian_field()` and :func:`~kszx.estimate_power_spectrum()`, we use
    the following normalization for the power spectrum $P(k)$:
@@ -50,11 +48,9 @@ Fourier conventions and normalization
  - Idea behind these conventions: in a finite pixelized box, these conventions are as similar
    as possible to the following infinite-volume continuous conventions:
 
-   $$\begin{align}
-   f(k) &= \int d^nx\, f(x) e^{-ik\cdot x} \\
+   $$f(k) &= \int d^nx\, f(x) e^{-ik\cdot x} \\
    f(x) &= \int \frac{d^nk}{(2\pi)^n} \, f(k) e^{ik\cdot x} \\
-   \langle f(k) f(k')^* \rangle &= P(k) (2\pi)^n \delta^n(k-k')
-   \end{align}$$
+   \langle f(k) f(k')^* \rangle &= P(k) (2\pi)^n \delta^n(k-k')$$
 
 .. _ffts_with_spin:
    
@@ -64,10 +60,8 @@ FFTs with nonzero "spin"
  - We define spin-1 Fourier transforms by inserting an extra factor
    $\epsilon_l P_l({\hat k} \cdot {\hat r})$:
 
-   $$\begin{align}
-   f(k) &= V_{pix} \sum_x \epsilon_l^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x} \\
-   f(x) &= V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x}
-   \end{align}$$
+   $$f(k) &= V_{pix} \sum_x \epsilon_l^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x} \\
+   f(x) &= V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x}$$
 
    where the line-of-sight direction $\hat r$ is defined in "observer coordinates"
    (see :class:`~kszx.Box` for more info), and our convention for the phase $\epsilon_l$ is:
@@ -208,7 +202,5 @@ $$X_{li}({\hat r}) = \begin{cases}
 Then the spin-$l$ FFT can be written as a sum of $(2l+1)$ ordinary (spin-0) FFTs.
 We write this out explicitly for the c2r transform:
 
-$$\begin{align}
-f(x) &= V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x} \\
-&= \epsilon_l V_{box}^{-1} \sum_{i=0}^{2l} X_{li}(x) \sum_k X_{li}(k) f(k) e^{ik\cdot x}
-\end{align}$$
+$$f(x) &= V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x} \\
+&= \epsilon_l V_{box}^{-1} \sum_{i=0}^{2l} X_{li}(x) \sum_k X_{li}(k) f(k) e^{ik\cdot x}$$

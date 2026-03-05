@@ -30,10 +30,10 @@ def fft_r2c(box, arr, spin=0, threads=None):
     The real-space and Fourier-space array shapes are given by ``box.real_space_shape``
     and ``box.fourier_space_shape``, and are related as follows:
 
-    $$\begin{align}
+    $$
     (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
     (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-    \end{align}$$
+    $$
 
     Notes:
 
@@ -115,10 +115,10 @@ def fft_c2r(box, arr, spin=0, threads=None):
     The real-space and Fourier-space array shapes are given by ``box.real_space_shape``
     and ``box.fourier_space_shape``, and are related as follows:
 
-    $$\begin{align}
+    $$
     (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
     (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-    \end{align}$$
+    $$
 
     Notes:
 
@@ -198,10 +198,10 @@ def interpolate_points(box, arr, points, kernel, fft=False, spin=0, periodic=Fal
           The real-space and Fourier-space array shapes are given by ``box.real_space_shape``
           and ``box.fourier_space_shape``, and are related as follows:
  
-         $$\begin{align}
+         $$
          (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
          (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-         \end{align}$$
+         $$
 
         - ``points`` (numpy array):
           Sequence of points where the map is to be interpolated.
@@ -335,10 +335,10 @@ def grid_points(box, points, weights=None, rpoints=None, rweights=None, kernel=N
         The real-space and Fourier-space array shapes are given by ``box.real_space_shape``
         and ``box.fourier_space_shape``, and are related as follows:
 
-        $$\begin{align}
+        $$
         (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
         (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-        \end{align}$$
+        $$
 
     Notes:
 
@@ -464,10 +464,10 @@ def apply_kernel_compensation(box, arr, kernel, exponent=-0.5):
     Reminder: real-space and Fourier-space array shapes are given by ``box.real_space_shape``
     and ``box.fourier_space_shape``, and are related as follows:
 
-    $$\begin{align}
+    $$
     (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
     (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-    \end{align}$$
+    $$
     """
 
     # See tex notes. The variable 's' is sin(k*L/2)
@@ -626,10 +626,10 @@ def multiply_kfunc(box, arr, f, dest=None, in_place=False, dc=None):
          Reminder: real-space and Fourier-space array shapes are given by ``box.real_space_shape``
          and ``box.fourier_space_shape``, and are related as follows:
 
-         $$\begin{align}
+         $$
          (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
          (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-         \end{align}$$
+         $$
     """
 
     assert isinstance(box, Box)
@@ -712,10 +712,10 @@ def apply_partial_derivative(box, arr, axis, dest=None, in_place=True):
          Reminder: real-space and Fourier-space array shapes are given by ``box.real_space_shape``
          and ``box.fourier_space_shape``, and are related as follows:
 
-         $$\begin{align}
+         $$
          (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
          (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-         \end{align}$$
+         $$
     """
 
     assert isinstance(box, Box)
@@ -809,10 +809,10 @@ def simulate_white_noise(box, *, fourier):
         The real-space and Fourier-space array shapes are given by ``box.real_space_shape``
         and ``box.fourier_space_shape``, and are related as follows:
 
-        $$\begin{align}
+        $$
         (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
         (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-        \end{align}$$
+        $$
 
     Note: our normalization conventions for the simulated field are (in Fourier and real space):
     
@@ -893,10 +893,10 @@ def simulate_gaussian_field(box, pk, pk0=None):
          Reminder: real-space and Fourier-space array shapes are given by ``box.real_space_shape``
          and ``box.fourier_space_shape``, and are related as follows:
 
-         $$\begin{align}
+         $$
          (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
          (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-         \end{align}$$
+         $$
     """
 
     assert isinstance(box, Box)
@@ -1021,10 +1021,10 @@ def estimate_power_spectrum(box, map_or_maps, kbin_edges, *, use_dc=False, allow
          Reminder: real-space and Fourier-space array shapes are given by ``box.real_space_shape``
          and ``box.fourier_space_shape``, and are related as follows:
 
-         $$\begin{align}
+         $$
          (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
          (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-         \end{align}$$
+         $$
 
        - Before calling ``estimate_power_spectrum()``, you may want to call :func:`~kszx.apply_kernel_compensation()`
          to mitigate high-$k$ biases. See :func:`~kszx.apply_kernel_compensation()` docstring for more info.

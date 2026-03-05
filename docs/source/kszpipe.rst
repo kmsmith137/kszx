@@ -46,8 +46,7 @@ The KszPipe computes power spectra involving a galaxy density field $\rho_g$,
 one or more kSZ velocity reconstructions $\hat v_r$, and surrogate fields $S_g, S_v$.
 Definitions of these fields are given in the overleaf, and can be summarized as follows:
 
-$$\begin{align}
-W_L(x) &= \mbox{Large-scale galaxy weight function (e.g. FKP)}  \\
+$$W_L(x) &= \mbox{Large-scale galaxy weight function (e.g. FKP)}  \\
 W_S(x) &= \mbox{Small-scale weight function, applied to galaxies during velocity reconstruction}  \\
 \rho_g(x) &= \bigg( \sum_{i\in \rm gal} W_i^L \, \delta^3(x-x_i) \bigg) - \frac{N_g}{N_r} \bigg( \sum_{j\in \rm rand} W_j^L \, \delta^3(x-x_j) \bigg) \\
 \hat v_r(x) &= \sum_{i\in \rm gal} W_i^S \, \tilde T(\theta_i) \, \delta^3(x-x_i) \\
@@ -55,10 +54,9 @@ S_g(x) &= \sum_{j\in \rm rand} \frac{N_g}{N_r} W_j^L \big( b_j^G \delta_m(x_j) +
 S_v(x) &= \sum_{j\in\rm rand} \bigg( \frac{N_g}{N_r} W_j^S b_j^v v_r(x_j) + M_j W_j^S \tilde T(\theta_j) \bigg)  \delta^3(x-x_j) \\
 \big\langle \eta_j^2 \big\rangle &= \frac{N_r}{N_g} - \big\langle \delta_G(z_j)^2 \big\rangle \\
 M_j &= \begin{cases}
-1 & \mbox{if $j$ is in a randomly selected subset of size } N_{\rm gal} \\ 
+1 & \mbox{if $j$ is in a randomly selected subset of size } N_{\rm gal} \\
 0 & \mbox{otherwise}
-\end{cases}
-\end{align}$$
+\end{cases}$$
 
 To mitigate foregrounds, the KszPipe also includes mean-subtraction steps in $v_r$ and $S_v$ which
 are described in the overleaf.
@@ -70,10 +68,8 @@ applied to $T_{CMB}$. (Since different CMB frequency channels can use different 
 $b_v$ can depend on CMB frequency channel.)
 One reasonable way of initializing $b_v$ is to use the following approximate expression
 from the overleaf:
-$$\begin{align}
-b_j^v &\approx B_v(z_j) \, W_{\rm CMB}(\theta_j) \\
-B_v(\chi) &\equiv \frac{K(\chi)}{\chi^2} \int \frac{d^2L}{(2\pi)^2} \, b_L F_L \, P_{ge}^{\rm true}(k,\chi)_{k=L/\chi}
-\end{align}$$
+$$b_j^v &\approx B_v(z_j) \, W_{\rm CMB}(\theta_j) \\
+B_v(\chi) &\equiv \frac{K(\chi)}{\chi^2} \int \frac{d^2L}{(2\pi)^2} \, b_L F_L \, P_{ge}^{\rm true}(k,\chi)_{k=L/\chi}$$
 
 .. _kszpipe_input_files:
 

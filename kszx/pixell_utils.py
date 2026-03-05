@@ -362,10 +362,8 @@ def fkp_from_ivar(ivar, cl0, normalize=True, return_wvar=False):
 
     The FKP weighting is defined by:
     
-    $$\begin{align}
-    W(\theta) &= \frac{1}{C_l^{(0)} + N(\theta)} \\
-    N(\theta) &\equiv \frac{\mbox{Pixel area}}{\mbox{ivar}(\theta)} \hspace{1cm} \mbox{"Local" noise power spectrum}
-    \end{align}$$
+    $$W(\theta) &= \frac{1}{C_l^{(0)} + N(\theta)} \\
+    N(\theta) &\equiv \frac{\mbox{Pixel area}}{\mbox{ivar}(\theta)} \hspace{1cm} \mbox{"Local" noise power spectrum}$$
 
     In implementation, in order to avoid divide-by-zero for ivar=0, we compute $W(\theta)$ equivalently as:
     

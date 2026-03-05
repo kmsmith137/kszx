@@ -24,9 +24,7 @@ class CmbClFitter:
         specified ``cmb_map`` (with pixel weighting specified by ``weight_map``, and for 
         $l_{\rm min} \le l \le l_{\rm max}$) to a model of the form:
 
-        $$\begin{align}
-        C_l &= b_l^2 C_l^{\rm CAMB} + A_{\rm red} b_l^2 \max\left( \frac{l}{l_{\rm red}}, 1 \right)^\alpha + A_{\rm white}
-        \end{align}$$
+        $$C_l &= b_l^2 C_l^{\rm CAMB} + A_{\rm red} b_l^2 \max\left( \frac{l}{l_{\rm red}}, 1 \right)^\alpha + A_{\rm white}$$
         with parameters $(A_{\rm red}, A_{\rm white}, \alpha, l_{\rm red})$. Here, $C_l^{CAMB}$ is the 
         **lensed** CMB power spectrum, and does not include kSZ or foregrounds.
 

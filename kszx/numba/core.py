@@ -68,10 +68,8 @@ def simulate_white_noise(box, *, fourier):
         The real-space and Fourier-space array shapes are given by ``box.real_space_shape``
         and ``box.fourier_space_shape``, and are related as follows:
 
-        $$\begin{align}
-        (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
-        (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-        \end{align}$$
+        $$(\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
+        (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)$$
 
     Note: our normalization conventions for the simulated field are (in Fourier and real space):
     
@@ -152,10 +150,8 @@ def simulate_gaussian_field(box, pk, pk0=None):
          Reminder: real-space and Fourier-space array shapes are given by ``box.real_space_shape``
          and ``box.fourier_space_shape``, and are related as follows:
 
-         $$\begin{align}
-         (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
-         (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-         \end{align}$$
+         $$(\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
+         (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)$$
     """
 
     assert isinstance(box, Box)
@@ -229,10 +225,8 @@ def apply_kernel_compensation(box, arr, kernel, exponent=-0.5):
     Reminder: real-space and Fourier-space array shapes are given by ``box.real_space_shape``
     and ``box.fourier_space_shape``, and are related as follows:
 
-    $$\begin{align}
-    (\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
-    (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)
-    \end{align}$$
+    $$(\mbox{real-space shape}) &= (n_0, n_1, \cdots, n_{d-1}) \\
+    (\mbox{Fourier-space shape}) &= (n_0, n_1, \cdots, \lfloor n_{d-1}/2 \rfloor + 1)$$
     """
 
     # See tex notes. The variable 's' is sin(k*L/2)

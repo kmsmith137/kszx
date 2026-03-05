@@ -105,21 +105,21 @@ template<> inline void pse_1d<1> (const pse_args &args, double curr_k2, long cur
     long s = strides[0];
 
     for (long ik = 0; 2*ik <= np; ik++) {
-	// Update curr_bin.
-	double k2 = curr_k2 + square(ik*kf);
-	while (k2 >= k2_delim[curr_bin+1])
-	    if (++curr_bin == nkbins)
-		return;
-	
-	long mc = ((ik==0) || (2*ik==np)) ? 1 : 2;  // mode count
-	cplx z = map[0];
-	map += s;
-	
-	if (curr_bin < 0)
-	    continue;
+    // Update curr_bin.
+    double k2 = curr_k2 + square(ik*kf);
+    while (k2 >= k2_delim[curr_bin+1])
+        if (++curr_bin == nkbins)
+        return;
+    
+    long mc = ((ik==0) || (2*ik==np)) ? 1 : 2;  // mode count
+    cplx z = map[0];
+    map += s;
+    
+    if (curr_bin < 0)
+        continue;
 
-	out_pk[curr_bin] += mc * mult_zz(z, z);
-	out_bcounts[curr_bin] += mc;
+    out_pk[curr_bin] += mc * mult_zz(z, z);
+    out_bcounts[curr_bin] += mc;
     }
 }
 
@@ -139,25 +139,25 @@ template<> inline void pse_1d<2> (const pse_args &args, double curr_k2, long cur
     long s1 = strides[1];
 
     for (long ik = 0; 2*ik <= np; ik++) {
-	// Update curr_bin.
-	double k2 = curr_k2 + square(ik*kf);
-	while (k2 >= k2_delim[curr_bin+1])
-	    if (++curr_bin == nkbins)
-		return;
+    // Update curr_bin.
+    double k2 = curr_k2 + square(ik*kf);
+    while (k2 >= k2_delim[curr_bin+1])
+        if (++curr_bin == nkbins)
+        return;
 
-	long mc = ((ik==0) || (2*ik==np)) ? 1 : 2;  // mode count
-	cplx z0 = map0[0];
-	cplx z1 = map1[0];
-	map0 += s0;
-	map1 += s1;
-	
-	if (curr_bin < 0)
-	    continue;
+    long mc = ((ik==0) || (2*ik==np)) ? 1 : 2;  // mode count
+    cplx z0 = map0[0];
+    cplx z1 = map1[0];
+    map0 += s0;
+    map1 += s1;
+    
+    if (curr_bin < 0)
+        continue;
 
-	out_pk[3*curr_bin] += mc * mult_zz(z0,z0);
-	out_pk[3*curr_bin+1] += mc * mult_zz(z0,z1);
-	out_pk[3*curr_bin+2] += mc * mult_zz(z1,z1);
-	out_bcounts[curr_bin] += mc;
+    out_pk[3*curr_bin] += mc * mult_zz(z0,z0);
+    out_pk[3*curr_bin+1] += mc * mult_zz(z0,z1);
+    out_pk[3*curr_bin+2] += mc * mult_zz(z1,z1);
+    out_bcounts[curr_bin] += mc;
     }
 }
 
@@ -179,30 +179,30 @@ template<> inline void pse_1d<3> (const pse_args &args, double curr_k2, long cur
     long s2 = strides[2];
 
     for (long ik = 0; 2*ik <= np; ik++) {
-	// Update curr_bin.
-	double k2 = curr_k2 + square(ik*kf);
-	while (k2 >= k2_delim[curr_bin+1])
-	    if (++curr_bin == nkbins)
-		return;
+    // Update curr_bin.
+    double k2 = curr_k2 + square(ik*kf);
+    while (k2 >= k2_delim[curr_bin+1])
+        if (++curr_bin == nkbins)
+        return;
 
-	long mc = ((ik==0) || (2*ik==np)) ? 1 : 2;
-	cplx z0 = map0[0];
-	cplx z1 = map1[0];
-	cplx z2 = map2[0];
-	map0 += s0;
-	map1 += s1;
-	map2 += s2;
-	
-	if (curr_bin < 0)
-	    continue;
+    long mc = ((ik==0) || (2*ik==np)) ? 1 : 2;
+    cplx z0 = map0[0];
+    cplx z1 = map1[0];
+    cplx z2 = map2[0];
+    map0 += s0;
+    map1 += s1;
+    map2 += s2;
+    
+    if (curr_bin < 0)
+        continue;
 
-	out_pk[6*curr_bin] += mc * mult_zz(z0,z0);
-	out_pk[6*curr_bin+1] += mc * mult_zz(z0,z1);
-	out_pk[6*curr_bin+2] += mc * mult_zz(z1,z1);
-	out_pk[6*curr_bin+3] += mc * mult_zz(z0,z2);
-	out_pk[6*curr_bin+4] += mc * mult_zz(z1,z2);
-	out_pk[6*curr_bin+5] += mc * mult_zz(z2,z2);
-	out_bcounts[curr_bin] += mc;
+    out_pk[6*curr_bin] += mc * mult_zz(z0,z0);
+    out_pk[6*curr_bin+1] += mc * mult_zz(z0,z1);
+    out_pk[6*curr_bin+2] += mc * mult_zz(z1,z1);
+    out_pk[6*curr_bin+3] += mc * mult_zz(z0,z2);
+    out_pk[6*curr_bin+4] += mc * mult_zz(z1,z2);
+    out_pk[6*curr_bin+5] += mc * mult_zz(z2,z2);
+    out_bcounts[curr_bin] += mc;
     }
 }
 
@@ -226,36 +226,36 @@ template<> inline void pse_1d<4> (const pse_args &args, double curr_k2, long cur
     long s3 = strides[3];
 
     for (long ik = 0; 2*ik <= np; ik++) {
-	// Update curr_bin.
-	double k2 = curr_k2 + square(ik*kf);
-	while (k2 >= k2_delim[curr_bin+1])
-	    if (++curr_bin == nkbins)
-		return;
+    // Update curr_bin.
+    double k2 = curr_k2 + square(ik*kf);
+    while (k2 >= k2_delim[curr_bin+1])
+        if (++curr_bin == nkbins)
+        return;
 
-	long mc = ((ik==0) || (2*ik==np)) ? 1 : 2;
-	cplx z0 = map0[0];
-	cplx z1 = map1[0];
-	cplx z2 = map2[0];
-	cplx z3 = map3[0];
-	map0 += s0;
-	map1 += s1;
-	map2 += s2;
-	map3 += s3;
-	
-	if (curr_bin < 0)
-	    continue;
+    long mc = ((ik==0) || (2*ik==np)) ? 1 : 2;
+    cplx z0 = map0[0];
+    cplx z1 = map1[0];
+    cplx z2 = map2[0];
+    cplx z3 = map3[0];
+    map0 += s0;
+    map1 += s1;
+    map2 += s2;
+    map3 += s3;
+    
+    if (curr_bin < 0)
+        continue;
 
-	out_pk[10*curr_bin] += mc * mult_zz(z0,z0);
-	out_pk[10*curr_bin+1] += mc * mult_zz(z0,z1);
-	out_pk[10*curr_bin+2] += mc * mult_zz(z1,z1);
-	out_pk[10*curr_bin+3] += mc * mult_zz(z0,z2);
-	out_pk[10*curr_bin+4] += mc * mult_zz(z1,z2);
-	out_pk[10*curr_bin+5] += mc * mult_zz(z2,z2);
-	out_pk[10*curr_bin+6] += mc * mult_zz(z0,z3);
-	out_pk[10*curr_bin+7] += mc * mult_zz(z1,z3);
-	out_pk[10*curr_bin+8] += mc * mult_zz(z2,z3);
-	out_pk[10*curr_bin+9] += mc * mult_zz(z3,z3);	
-	out_bcounts[curr_bin] += mc;
+    out_pk[10*curr_bin] += mc * mult_zz(z0,z0);
+    out_pk[10*curr_bin+1] += mc * mult_zz(z0,z1);
+    out_pk[10*curr_bin+2] += mc * mult_zz(z1,z1);
+    out_pk[10*curr_bin+3] += mc * mult_zz(z0,z2);
+    out_pk[10*curr_bin+4] += mc * mult_zz(z1,z2);
+    out_pk[10*curr_bin+5] += mc * mult_zz(z2,z2);
+    out_pk[10*curr_bin+6] += mc * mult_zz(z0,z3);
+    out_pk[10*curr_bin+7] += mc * mult_zz(z1,z3);
+    out_pk[10*curr_bin+8] += mc * mult_zz(z2,z3);
+    out_pk[10*curr_bin+9] += mc * mult_zz(z3,z3);   
+    out_bcounts[curr_bin] += mc;
     }
 }
 
@@ -273,31 +273,31 @@ inline void pse_1d_largeM(int M, const pse_args &args, double curr_k2, long curr
     const double *k2_delim = args.k2_delim;
 
     for (int m = 0; m < M; m++)
-	mtmp[m] = maps[m];
+    mtmp[m] = maps[m];
     
     for (long ik = 0; 2*ik <= np; ik++) {
-	// Update curr_bin.
-	double k2 = curr_k2 + square(ik*kf);
-	while (k2 >= k2_delim[curr_bin+1])
-	    if (++curr_bin == nkbins)
-		return;
+    // Update curr_bin.
+    double k2 = curr_k2 + square(ik*kf);
+    while (k2 >= k2_delim[curr_bin+1])
+        if (++curr_bin == nkbins)
+        return;
 
-	long mc = ((ik==0) || (2*ik==np)) ? 1 : 2;
+    long mc = ((ik==0) || (2*ik==np)) ? 1 : 2;
 
-	for (int m = 0; m < M; m++) {
-	    ztmp[m] = mtmp[m][0];
-	    mtmp[m] += strides[m];
-	}
-	
-	if (curr_bin < 0)
-	    continue;
+    for (int m = 0; m < M; m++) {
+        ztmp[m] = mtmp[m][0];
+        mtmp[m] += strides[m];
+    }
+    
+    if (curr_bin < 0)
+        continue;
 
-	double *p = out_pk + (M2 * curr_bin);
-	for (int m = 0; m < M; m++)
-	    for (int m2 = 0; m2 <= m; m2++)
-		*(p++) += mc * mult_zz(ztmp[m], ztmp[m2]);
-	
-	out_bcounts[curr_bin] += mc;
+    double *p = out_pk + (M2 * curr_bin);
+    for (int m = 0; m < M; m++)
+        for (int m2 = 0; m2 <= m; m2++)
+        *(p++) += mc * mult_zz(ztmp[m], ztmp[m2]);
+    
+    out_bcounts[curr_bin] += mc;
     }    
 }
 
@@ -312,32 +312,32 @@ static void pse(const pse_args &args, double curr_k2, long curr_bin, long ndim, 
     double kf0 = kf[0];
 
     if (ndim == 1) {
-	pse_1d<M> (args, curr_k2, curr_bin, np0, kf0, maps, strides);
-	return;
+    pse_1d<M> (args, curr_k2, curr_bin, np0, kf0, maps, strides);
+    return;
     }
     
     long nkbins = args.nkbins;
     const double *k2_delim = args.k2_delim;
     
     for (long m = 0; m < M; m++)
-	maps[M+m] = maps[m];
+    maps[M+m] = maps[m];
     
     for (long ik0 = 0; ik0 < np0; ik0++) {
-	long ik = std::min(ik0, np0-ik0);;
-	double k2 = curr_k2 + square(ik*kf0);
+    long ik = std::min(ik0, np0-ik0);;
+    double k2 = curr_k2 + square(ik*kf0);
 
-	// Update curr_bin
-	while ((curr_bin >= 0) && (k2 < k2_delim[curr_bin]))
-	    curr_bin--;   // search down
-	while ((curr_bin < nkbins) && (k2 >= k2_delim[curr_bin+1]))
-	    curr_bin++;   // search up
+    // Update curr_bin
+    while ((curr_bin >= 0) && (k2 < k2_delim[curr_bin]))
+        curr_bin--;   // search down
+    while ((curr_bin < nkbins) && (k2 >= k2_delim[curr_bin+1]))
+        curr_bin++;   // search up
 
-	// Call pse<M>() recursively, with ndim -> (ndim-1).
-	if (curr_bin < nkbins)
-	    pse<M> (args, k2, curr_bin, ndim-1, np+1, kf+1, maps+M, strides+M);
+    // Call pse<M>() recursively, with ndim -> (ndim-1).
+    if (curr_bin < nkbins)
+        pse<M> (args, k2, curr_bin, ndim-1, np+1, kf+1, maps+M, strides+M);
 
-	for (long m = 0; m < M; m++)
-	    maps[m+M] += strides[m];
+    for (long m = 0; m < M; m++)
+        maps[m+M] += strides[m];
     }
 }
 
@@ -349,32 +349,32 @@ static void pse_largeM(int M, const pse_args &args, double curr_k2, long curr_bi
     double kf0 = kf[0];
 
     if (ndim == 1) {
-	pse_1d_largeM(M, args, curr_k2, curr_bin, np0, kf0, maps, strides);
-	return;
+    pse_1d_largeM(M, args, curr_k2, curr_bin, np0, kf0, maps, strides);
+    return;
     }
     
     long nkbins = args.nkbins;
     const double *k2_delim = args.k2_delim;
     
     for (long m = 0; m < M; m++)
-	maps[M+m] = maps[m];
+    maps[M+m] = maps[m];
     
     for (long ik0 = 0; ik0 < np0; ik0++) {
-	long ik = std::min(ik0, np0-ik0);;
-	double k2 = curr_k2 + square(ik*kf0);
+    long ik = std::min(ik0, np0-ik0);;
+    double k2 = curr_k2 + square(ik*kf0);
 
-	// Update curr_bin
-	while ((curr_bin >= 0) && (k2 < k2_delim[curr_bin]))
-	    curr_bin--;   // search down
-	while ((curr_bin < nkbins) && (k2 >= k2_delim[curr_bin+1]))
-	    curr_bin++;   // search up
+    // Update curr_bin
+    while ((curr_bin >= 0) && (k2 < k2_delim[curr_bin]))
+        curr_bin--;   // search down
+    while ((curr_bin < nkbins) && (k2 >= k2_delim[curr_bin+1]))
+        curr_bin++;   // search up
 
-	// Call pse_largeM() recursively, with ndim -> (ndim-1).
-	if (curr_bin < nkbins)
-	    pse_largeM(M, args, k2, curr_bin, ndim-1, np+1, kf+1, maps+M, strides+M);
+    // Call pse_largeM() recursively, with ndim -> (ndim-1).
+    if (curr_bin < nkbins)
+        pse_largeM(M, args, k2, curr_bin, ndim-1, np+1, kf+1, maps+M, strides+M);
 
-	for (long m = 0; m < M; m++)
-	    maps[m+M] += strides[m];
+    for (long m = 0; m < M; m++)
+        maps[m+M] += strides[m];
     }
 }
 
@@ -385,31 +385,31 @@ static void pse_largeM(int M, const pse_args &args, double curr_k2, long curr_bi
 py::tuple estimate_power_spectrum(py::list map_list, py::array_t<const double> &k_delim, py::array_t<const long> &npix, py::array_t<const double> &kf, double box_volume)
 {
     if (k_delim.ndim() != 1)
-	throw runtime_error("estimate_power_spectrum: expected k_delim.ndim == 1");
+    throw runtime_error("estimate_power_spectrum: expected k_delim.ndim == 1");
     if (npix.ndim() != 1)
-	throw runtime_error("estimate_power_spectrum: expected npix.ndim == 1");
+    throw runtime_error("estimate_power_spectrum: expected npix.ndim == 1");
     if (kf.ndim() != 1)
-	throw runtime_error("estimate_power_spectrum: expected kf.ndim == 1");
+    throw runtime_error("estimate_power_spectrum: expected kf.ndim == 1");
     if (npix.shape(0) != kf.shape(0))
-	throw runtime_error("estimate_power_spectrum: expected len(npix) == len(kf)");
+    throw runtime_error("estimate_power_spectrum: expected len(npix) == len(kf)");
     if (box_volume <= 0)
-	throw runtime_error("estimate_power_spectrum: expected box_volume > 0");
+    throw runtime_error("estimate_power_spectrum: expected box_volume > 0");
     
     if (get_stride(npix,0) != 1)
-	throw runtime_error("estimate_power_spectrum: expected npix to be contiguous array");
+    throw runtime_error("estimate_power_spectrum: expected npix to be contiguous array");
     if (get_stride(kf,0) != 1)
-	throw runtime_error("estimate_power_spectrum: expected kf to be contiguous array");
+    throw runtime_error("estimate_power_spectrum: expected kf to be contiguous array");
     
     long nmaps = map_list.size();
     long nkbins = get_shape(k_delim,0) - 1;    // note -1 here
     int ndim = get_shape(npix,0);
 
     if (ndim < 1)
-	throw runtime_error("estimate_power_spectrum: expected len(npix) >= 1");
+    throw runtime_error("estimate_power_spectrum: expected len(npix) >= 1");
     if (nkbins < 1)
-	throw runtime_error("estimate_power_spectrum: expected len(k_delim) >= 2");
+    throw runtime_error("estimate_power_spectrum: expected len(k_delim) >= 2");
     if (nmaps < 1)
-	throw runtime_error("estimate_power_spectrum: expected map_list to be a nonempty list");
+    throw runtime_error("estimate_power_spectrum: expected map_list to be a nonempty list");
 
     // Allocate some arrays needed by the PSE kernel.
     // Note: 'map_vec' is length (ndim * nmaps), but only the first nmaps entries will be
@@ -426,42 +426,42 @@ py::tuple estimate_power_spectrum(py::list map_list, py::array_t<const double> &
     long ks = get_stride(k_delim, 0);
     
     if (kd[0] < 0.)
-	throw runtime_error("estimate_power_spectrum: expected k_delim[0] >= 0");
+    throw runtime_error("estimate_power_spectrum: expected k_delim[0] >= 0");
 
     for (long b = 0; b < nkbins; b++)
-	if (kd[b*ks] >= kd[(b+1)*ks])
-	    throw runtime_error("estimate_power_spectrum: expected k_delim array to be sorted");
+    if (kd[b*ks] >= kd[(b+1)*ks])
+        throw runtime_error("estimate_power_spectrum: expected k_delim array to be sorted");
 
     for (long b = 0; b < nkbins+1; b++)
-	k2_delim[b] = square(kd[b*ks]);
+    k2_delim[b] = square(kd[b*ks]);
     
     // Error-check 'npix' argument, and populate 'np' vector.
     
     for (int axis = 0; axis < ndim; axis++) {
-	long n = npix.data()[axis];
-	if (n <= 0)
-	    throw runtime_error("estimate_power_spectrum: expected npix > 0");
-	np[axis] = n;
+    long n = npix.data()[axis];
+    if (n <= 0)
+        throw runtime_error("estimate_power_spectrum: expected npix > 0");
+    np[axis] = n;
     }
 
     // Error-check 'map_list' argument, and populate vectors 'map_vec', 'strides'.
     
     for (long imap = 0; imap < nmaps; imap++) {
-	py::object obj = map_list[imap];
-	py::array_t<complex<double>> arr = obj;
+    py::object obj = map_list[imap];
+    py::array_t<complex<double>> arr = obj;
 
-	if (arr.ndim() != ndim)
-	    throw runtime_error("estimate_power_spectrum: expected map.ndim == len(npix)");
-	
-	map_vec[imap] = arr.data();
-	
-	for (int axis = 0; axis < ndim; axis++) {
-	    long n_expected = (axis < (ndim-1)) ? np[axis] : ((np[axis]/2) + 1);
-	    if (arr.shape(axis) != n_expected)
-		throw runtime_error("estimate_power_spectrum: map shape is inconsistent with 'npix'");
-	    
-	    strides[axis*nmaps + imap] = get_stride(arr, axis);
-	}
+    if (arr.ndim() != ndim)
+        throw runtime_error("estimate_power_spectrum: expected map.ndim == len(npix)");
+    
+    map_vec[imap] = arr.data();
+    
+    for (int axis = 0; axis < ndim; axis++) {
+        long n_expected = (axis < (ndim-1)) ? np[axis] : ((np[axis]/2) + 1);
+        if (arr.shape(axis) != n_expected)
+        throw runtime_error("estimate_power_spectrum: map shape is inconsistent with 'npix'");
+        
+        strides[axis*nmaps + imap] = get_stride(arr, axis);
+    }
     }
 
     // Run PSE kernel.
@@ -485,15 +485,15 @@ py::tuple estimate_power_spectrum(py::list map_list, py::array_t<const double> &
     long curr_bin = (args.k2_delim[0] > 0.) ? -1 : 0;
 
     if (nmaps == 1)
-	pse<1> (args, 0.0, curr_bin, ndim, &np[0], kf.data(), &map_vec[0], &strides[0]);
+    pse<1> (args, 0.0, curr_bin, ndim, &np[0], kf.data(), &map_vec[0], &strides[0]);
     else if (nmaps == 2)
-	pse<2> (args, 0.0, curr_bin, ndim, &np[0], kf.data(), &map_vec[0], &strides[0]);
+    pse<2> (args, 0.0, curr_bin, ndim, &np[0], kf.data(), &map_vec[0], &strides[0]);
     else if (nmaps == 3)
-	pse<3> (args, 0.0, curr_bin, ndim, &np[0], kf.data(), &map_vec[0], &strides[0]);
+    pse<3> (args, 0.0, curr_bin, ndim, &np[0], kf.data(), &map_vec[0], &strides[0]);
     else if (nmaps == 4)
-	pse<4> (args, 0.0, curr_bin, ndim, &np[0], kf.data(), &map_vec[0], &strides[0]);
+    pse<4> (args, 0.0, curr_bin, ndim, &np[0], kf.data(), &map_vec[0], &strides[0]);
     else
-	pse_largeM(nmaps, args, 0.0, curr_bin, ndim, &np[0], kf.data(), &map_vec[0], &strides[0]);
+    pse_largeM(nmaps, args, 0.0, curr_bin, ndim, &np[0], kf.data(), &map_vec[0], &strides[0]);
 
     // Copy tmp_pk -> ret_pk (array orderings are different), and apply normalization.
     
@@ -502,24 +502,24 @@ py::tuple estimate_power_spectrum(py::list map_list, py::array_t<const double> &
     double *rptr = ret_pk.mutable_data();
     
     for (long b = 0; b < nkbins; b++) {
-	long n = args.out_bcounts[b];
-	pk_norm[b] = (n > 0) ? (1.0 / double(n) / box_volume) : 0.0;
+    long n = args.out_bcounts[b];
+    pk_norm[b] = (n > 0) ? (1.0 / double(n) / box_volume) : 0.0;
     }
     
     long isrc = 0;  // represents index pair (m,m2)
     for (long m = 0; m < nmaps; m++) {
-	for (long m2 = 0; m2 <= m; m2++) {
-	    long idst1 = (m*nmaps + m2) * nkbins;
-	    long idst2 = (m2*nmaps + m) * nkbins;
-	    
-	    for (long b = 0; b < nkbins; b++) {
-		double pk = pk_norm[b] * tmp_pk[b*M2 + isrc];
-		rptr[idst1+b] = pk;
-		rptr[idst2+b] = pk;
-	    }
-	    
-	    isrc++;
-	}
+    for (long m2 = 0; m2 <= m; m2++) {
+        long idst1 = (m*nmaps + m2) * nkbins;
+        long idst2 = (m2*nmaps + m) * nkbins;
+        
+        for (long b = 0; b < nkbins; b++) {
+        double pk = pk_norm[b] * tmp_pk[b*M2 + isrc];
+        rptr[idst1+b] = pk;
+        rptr[idst2+b] = pk;
+        }
+        
+        isrc++;
+    }
     }
 
     return py::make_tuple(ret_pk, ret_bcounts);

@@ -33,8 +33,33 @@ class Coeffs:
           - self.L2_vals: sorted list of all L2-values arising in self.map5.
         """
 
-        pass
-        
+        self.map5 = {}
+
+        for l3E in range(abs(l1E - l2E), l1E + l2E + 1, 2):
+            for l3S in range(abs(l1S - l2S), l1S + l2S + 1, 2):
+                for L1 in range(abs(l1E - l1S), l1E + l1S + 1, 2):
+                    for L2 in range(abs(l2E - l2S), l2E + l2S + 1, 2):
+                        L3_min = max(abs(L1 - L2), abs(l3E - l3S))
+                        L3_max = min(L1 + L2, l3E + l3S)
+
+                        for L3 in range(L3_min, L3_max + 1):
+                            coeff = (4 * np.pi)**2 * (2*L3 + 1)
+                            coeff *= np.sqrt((2*l3E + 1) * (2*l3S + 1) * (2*L1 + 1) * (2*L2 + 1))
+                            coeff *= utils.wigner_3j(l1E, l2E, l3E, 0, 0, 0)
+                            coeff *= utils.wigner_3j(l1S, l2S, l3S, 0, 0, 0)
+                            coeff *= utils.wigner_3j(l1E, l1S, L1, 0, 0, 0)
+                            coeff *= utils.wigner_3j(l2E, l2S, L2, 0, 0, 0)
+                            coeff *= utils.wigner_9j(l1E, l2E, l3E, l1S, l2S, l3S, L1, L2, L3)
+
+                            if coeff != 0:
+                                self.map5[(l3E, l3S, L1, L2, L3)] = coeff
+
+        self.l3E_vals = sorted(set(k[0] for k in self.map5))
+        self.l3S_vals = sorted(set(k[1] for k in self.map5))
+        self.L1_vals = sorted(set(k[2] for k in self.map5))
+        self.L2_vals = sorted(set(k[3] for k in self.map5))
+        self.L3_vals = sorted(set(k[4] for k in self.map5))
+
 
 class Vlm:
     r"""

@@ -88,19 +88,15 @@ class Vlm:
     and satisfies:
       V_{l,-m}(k) = (-1)^m V_{lm}(-k)^*
 
-    In implementation, it's convenient to work in a real basis.
-    For 0 <= i <= 2l, define real spherical harmonics y_{li} by:
-       Y_{l0}      for i=0
-       Re(Y_{lm})  for i=2m-1
-       Im(Y_{lm})  for i=2m
-
+    In implementation, it's convenient to use real spherical harmonics X_{li}(\hat x).
     Define v_{li}(k) by:
-      v_{li}(k) = int_x e^{-ik.x} f(x) y_{li}(\hat x)
+      v_{li}(k) = int_x e^{-ik.x} f(x) X_{li}(\hat x)
 
-    Then v_{li}(k) is "real", in the sense that:
+    Then v_{li}(k) is "self-conjugate", in the sense that:
       v_{li}(-k) = v_{li}(k)^*
 
-    This is convenient because v_{li} can be represented as an "ordinary" Fourier-space map.
+    This is convenient because many functions in kszx operate on self-conjugate
+    Fourier-space maps (e.g. FFTs).
 
     The V_{lm}(k) maps are given in terms of v_{li}(k) as follows:
     
@@ -118,11 +114,7 @@ class Vlm:
 
         for l in self.ls:
             for i in range(2*l + 1):
-                # multiply_xli_real_space multiplies by X_{li}, but we need Z_{li} (unnormalized).
-                # X_{l0} = sqrt(4pi/(2l+1)) * Z_{l0}, X_{li} = sqrt(8pi/(2l+1)) * Z_{li} for i>0.
-                # We want FFT(f * Z_{li}) = (1/c_{li}) * FFT(f * X_{li}).
-                coeff = np.sqrt((2*l + 1) / (4*np.pi)) if (i == 0) else np.sqrt((2*l + 1) / (8*np.pi))
-                cpp_kernels.multiply_xli_real_space(tmp, f, l, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, coeff, False)
+                cpp_kernels.multiply_xli_real_space(tmp, f, l, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, 1.0, False)
                 self.vli[(l,i)] = core.fft_r2c(box, tmp)
 
     def vlm_components(self, l, m):

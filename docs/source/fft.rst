@@ -184,8 +184,8 @@ FFTs with nonzero "spin"
 
 .. _fft_implementation:
 
-FFT implementation notes
-^^^^^^^^^^^^^^^^^^^^^^^^
+FFT implementation notes (current implementation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 We implement spin-$l$ FFTs by writing:
 
@@ -204,3 +204,61 @@ We write this out explicitly for the c2r transform:
 
 $$f(x) &= V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x} \\
 &= \epsilon_l V_{box}^{-1} \sum_{i=0}^{2l} X_{li}(x) \sum_k X_{li}(k) f(k) e^{ik\cdot x}$$
+
+
+FFT implementation notes (proposed alternate implementation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+We implement spin-$l$ FFTs by writing:
+
+$$P_l({\hat k} \cdot {\hat r}) = \frac{4\pi\epsilon_l^*}{2l+1} \sum_{i=0}^{2l} \eta_i X_{li}({\hat k}) X_{li}({\hat r})$$
+
+where $\eta_i$ is defined by:
+
+.. math::
+
+   \eta_i = \begin{cases}
+     1 & \mbox{if } i=0 \\
+     2 & \mbox{if } i>0
+   \end{cases}
+
+and we define real spherical harmonics $\{ X_{li} \}_{0 \le i < 2l+1}$ by:
+
+.. math::
+
+   X_{li}({\hat r}) = \begin{cases}
+     Y_{l0}({\hat r}) & \mbox{if } i=0 \\
+     \mbox{Re} \, Y_{lm}({\hat r}) & \mbox{if } i=2m-1 \mbox{ where } m\ge 1 \\
+     \mbox{Im} \, Y_{lm}({\hat r}) & \mbox{if } i=2m \mbox{ where } m\ge 1
+   \end{cases}
+
+.. math::
+
+   X_{li}({\hat k}) = \begin{cases}
+     \epsilon_l Y_{l0}({\hat k}) & \mbox{if } i=0 \\
+     \epsilon_l \mbox{Re} \, Y_{lm}({\hat k}) & \mbox{if } i=2m-1 \mbox{ where } m\ge 1 \\
+     \epsilon_l \mbox{Im} \, Y_{lm}({\hat k}) & \mbox{if } i=2m \mbox{ where } m\ge 1
+   \end{cases}
+
+where, by a small abuse of notation, the definition of $X_{li}$ depends on whether
+its argument is a real-space unit vector $\hat r$, or a Fourier-space unit vector $\hat k$.
+This is so $X_{li}$ will obey the "reality" conditions:
+
+.. math::
+
+   X_{li}(\hat r)^* = X_{li}(\hat r)
+   \hspace{1cm}
+   X_{li}(-\hat k)^* = X_{li}(\hat k)
+
+Then the spin-$l$ FFT can be written as a sum of $(2l+1)$ ordinary (spin-0) FFTs.
+We write this out explicitly for both c2r and r2c transforms:
+
+.. math::
+
+   f(x) &= V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x} \\
+         &= \frac{4\pi}{2l+1} V_{box}^{-1} \sum_{i=0}^{2l} \eta_i \, X_{li}({\hat r}) \sum_k X_{li}({\hat k}) \, f(k) \, e^{ik\cdot x}
+
+.. math::
+
+   f(k) &= V_{pix} \sum_x \epsilon_l^* P_l({\hat k} \cdot {\hat r}) f(x) e^{-ik\cdot x} \\
+         &= \frac{4\pi(-1)^l}{2l+1} V_{pix} \sum_{i=0}^{2l} \eta_i \, X_{li}({\hat k}) \sum_x X_{li}({\hat r}) \, f(x) \, e^{-ik\cdot x}

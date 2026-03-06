@@ -15,7 +15,7 @@ author = 'Selim, Yurii, Edmond, Alex, Mat, Kendrick, et al'
 
 import os
 import sys
-#sys.path.insert(0, os.path.abspath('../..'))
+sys.path.insert(0, os.path.abspath('../..'))
 import kszx
 
 # https://sublime-and-sphinx-guide.readthedocs.io/en/latest/references.html

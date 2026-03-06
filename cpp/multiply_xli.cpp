@@ -27,6 +27,7 @@
 
 #include <omp.h>
 #include <cmath>
+#include <iostream>
 #include "cpp_kernels.hpp"
 
 using namespace std;
@@ -217,10 +218,11 @@ template<bool Accum>
 inline void _multiply_xli_real_space(grid_helper<double> &dst, grid_helper<const double> &src, xlm_helper &h, double lpos0, double lpos1, double lpos2, double pixsize, double coeff)
 {
     if (h.l == 0) {
-        _multiply_x00<Accum> (dst, src, coeff);
+        // Y_{00} = 1/sqrt(4*pi), so multiply by coeff * Y_{00}.
+        _multiply_x00<Accum> (dst, src, coeff / sqrt(4*M_PI));
         return;
     }
-    
+
 #pragma omp parallel for
     for (long i0 = 0; i0 < dst.n0; i0++) {
         double x = lpos0 + (i0 * pixsize);
@@ -302,7 +304,12 @@ inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_
                 bool nyq = (2*i0 == dst.n0) || (2*i1 == dst.n1) || (2*i2 == nz);
                 
                 double xli = (nyq || dc) ? 0.0 : h.get(x, y, z);
-                complex<double> v = (coeff * xli) * sp[i2 * src.s2];
+                // X_{li}(khat) = eps_l * Y_{li}(khat), where eps_l = i for odd l, 1 for even l.
+                // For even l: coeff * xli is real, multiply directly.
+                // For odd l: coeff * (i * xli) has zero real part, nonzero imaginary part.
+                double cx = coeff * xli;
+                complex<double> v = (h.l & 1) ? (complex<double>(0.0, cx) * sp[i2 * src.s2])
+                                               : (cx * sp[i2 * src.s2]);
                 
                 if constexpr (Accum)
                     dp[i2 * dst.s2] += v;

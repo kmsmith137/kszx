@@ -86,7 +86,7 @@ def fft_r2c(box, arr, spin=0, threads=None):
     
     ret = np.empty(box.fourier_space_shape, dtype=complex)
     tmp = np.empty(box.real_space_shape, dtype=float)
-    sign = (-1.0)**spin
+    sign = -1 if (spin % 2) else 1
     prefactor = 4 * np.pi / (2*spin + 1)
 
     for i in range(2*spin+1):

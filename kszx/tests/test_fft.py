@@ -29,12 +29,17 @@ def xli_rs_box(l, i, box):
 
 
 def xli_fs_box(l, i, box):
+    """Returns X_{li}(khat) = eps_l * Y_{li}(khat), with DC and Nyquist zeroed for l>0."""
     xyz = [ box.get_k_component(axis) for axis in range(3) ]
     xli = xli_xyz(l, i, xyz[0], xyz[1], xyz[2])
-    
+
     if l > 0:
         core.zero_nyquist_modes(box, xli, zero_dc=True)
-    
+
+    # X_{li}(khat) = eps_l * Y_{li}(khat), where eps_l = i for odd l, 1 for even l.
+    if l % 2:
+        xli = 1j * xli
+
     return xli
 
 

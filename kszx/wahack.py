@@ -301,7 +301,7 @@ def Qlllm(vlm1, vlm2, l1, l2, l3, m3):
     return r, s
     
 
-def hP_mean(box, uk, f1, f2, pk, l1E, l2E, l1S, l2S):
+class TestPipeline:
     r"""
     Computes <\hat P> for a single rank-one estimator and rank-one signal.
 
@@ -322,51 +322,65 @@ def hP_mean(box, uk, f1, f2, pk, l1E, l2E, l1S, l2S):
 
     The 'f1' and 'f2' arguments are the real-space maps f_i(x) = W_i(x) F_i(x),
     in notation from the paper.
-    
+
     Current implementation is a brute-force sum, organized for code clarity
     not speed.
+
+    The constructor computes <\hat P> and stores it in self.hP_mean.
     """
 
-    coeffs = Coeffs(l1E, l2E, l1S, l2S)
+    def __init__(self, box, uk, f1, f2, pk, l1E, l2E, l1S, l2S):
+        self.box = box
+        self.uk = uk
+        self.f1 = f1
+        self.f2 = f2
+        self.pk = pk
+        self.l1E = l1E
+        self.l2E = l2E
+        self.l1S = l1S
+        self.l2S = l2S
 
-    if not coeffs.map5:
-        return 0.0
+        self.coeffs = Coeffs(l1E, l2E, l1S, l2S)
 
-    vlm1 = Vlm(box, f1, coeffs.L1_vals)
-    vlm2 = Vlm(box, f2, coeffs.L2_vals)
-    plm_u = Plm(box, uk, coeffs.l3E_vals)
-    plm_p = Plm(box, pk, coeffs.l3S_vals)
+        if not self.coeffs.map5:
+            self.hP_mean = 0.0
+            return
 
-    L_triples = sorted(set((k[2], k[3], k[4]) for k in coeffs.map5))
+        self.vlm1 = Vlm(box, f1, self.coeffs.L1_vals)
+        self.vlm2 = Vlm(box, f2, self.coeffs.L2_vals)
+        self.plm_u = Plm(box, uk, self.coeffs.l3E_vals)
+        self.plm_p = Plm(box, pk, self.coeffs.l3S_vals)
 
-    ret = 0.0
+        L_triples = sorted(set((k[2], k[3], k[4]) for k in self.coeffs.map5))
 
-    for L1, L2, L3 in L_triples:
-        for M3 in range(-L3, L3+1):
-            q = _to_complex(*Qlllm(vlm1, vlm2, L1, L2, L3, M3))
+        ret = 0.0
 
-            for l3E in coeffs.l3E_vals:
-                for l3S in coeffs.l3S_vals:
-                    c = coeffs.map5.get((l3E, l3S, L1, L2, L3), 0)
-                    if c == 0:
-                        continue
+        for L1, L2, L3 in L_triples:
+            for M3 in range(-L3, L3+1):
+                q = _to_complex(*Qlllm(self.vlm1, self.vlm2, L1, L2, L3, M3))
 
-                    for m3E in range(-l3E, l3E+1):
-                        m3S = -m3E - M3
-                        if abs(m3S) > l3S:
+                for l3E in self.coeffs.l3E_vals:
+                    for l3S in self.coeffs.l3S_vals:
+                        c = self.coeffs.map5.get((l3E, l3S, L1, L2, L3), 0)
+                        if c == 0:
                             continue
 
-                        w3j = utils.wigner_3j(l3E, l3S, L3, m3E, m3S, M3)
-                        if w3j == 0:
-                            continue
+                        for m3E in range(-l3E, l3E+1):
+                            m3S = -m3E - M3
+                            if abs(m3S) > l3S:
+                                continue
 
-                        u = _to_complex(*plm_u.plm_components(l3E, m3E))
-                        p = _negate_map(_to_complex(*plm_p.plm_components(l3S, m3S)))
+                            w3j = utils.wigner_3j(l3E, l3S, L3, m3E, m3S, M3)
+                            if w3j == 0:
+                                continue
 
-                        integral = box.pixel_volume * np.sum(u * q * p)
-                        ret += c * w3j * integral
+                            u = _to_complex(*self.plm_u.plm_components(l3E, m3E))
+                            p = _negate_map(_to_complex(*self.plm_p.plm_components(l3S, m3S)))
 
-    return np.real(ret)
+                            integral = box.pixel_volume * np.sum(u * q * p)
+                            ret += c * w3j * integral
+
+        self.hP_mean = np.real(ret)
 
 
 ####################################################################################################

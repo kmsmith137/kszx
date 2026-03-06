@@ -415,6 +415,39 @@ class TestPipeline:
         return sign * dot
 
 
+    def simulate(self):
+        r"""Simulate real-space fields (delta1, delta2) with the approprate rank-1 2PCF.
+
+        Returns a pair (delta1, delta2) of real-space maps satisfying:
+
+          $\langle \delta_1(x_1) \delta_2(x_2) \rangle
+             = \int_{k'} e^{ik'(x_1-x_2)} P(k') L_{l1S}(\hat k' \cdot \hat x_1) L_{l2S}(\hat k' \cdot \hat x_2)$
+
+        where P(k) = epsilon_{l1S+l2S} * pk(k), and pk is the self-conjugate map
+        passed to the constructor (wahack convention).
+
+        Algorithm: generate a Gaussian field g(k) with power pk(k), then apply
+        spin-l1S and spin-l2S c2r FFTs. A sign correction sigma is needed on delta2.
+        """
+
+        g = np.sqrt(self.pk) * core.simulate_white_noise(self.box, fourier=True)
+        delta1 = core.fft_c2r(self.box, g, spin=self.l1S)
+        delta2 = core.fft_c2r(self.box, g, spin=self.l2S)
+
+        # Sign correction: the correlator <g(k) g(k')> = V_box pk(k) delta_{k,-k'}
+        # forces the second field's Legendre polynomial to be evaluated at -khat,
+        # producing a factor (-1)^{l2S}. Combined with the epsilon_l phases from
+        # the two c2r transforms, the overall coefficient is epsilon_{l1S} epsilon_{l2S}^*.
+        # This must match i^p (where p = (l1S+l2S) % 2) from the wahack convention
+        # P(k) = i^p pk(k). The ratio sigma = i^p / (epsilon_{l1S} epsilon_{l2S}^*)
+        # equals -1 when l1S is even and l2S is odd, and +1 otherwise.
+        
+        if self.l1S % 2 == 0 and self.l2S % 2 == 1:
+            delta2 = -delta2
+
+        return delta1, delta2
+
+
 ####################################################################################################
 #
 # Helpers for flattening/unflattening arrays with conjugacy constraint arr[i]* = arr[(-i) % n].

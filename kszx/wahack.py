@@ -89,6 +89,8 @@ class Vlm:
       V_{l,-m}(k) = (-1)^m V_{lm}(-k)^*
 
     In implementation, it's convenient to use real spherical harmonics X_{li}(\hat x).
+    (See the bottom of the "FFTs" page of the sphnix docs for their definition.)
+    
     Define v_{li}(k) by:
       v_{li}(k) = int_x e^{-ik.x} f(x) X_{li}(\hat x)
 
@@ -118,9 +120,8 @@ class Vlm:
                 self.vli[(l,i)] = core.fft_r2c(box, tmp)
 
     def vlm_components(self, l, m):
-        """Returns (alpha, beta) such that V_{lm}(k) = alpha + i*beta.
+        """Returns self-conjugate maps (alpha, beta) such that V_{lm}(k) = alpha(k) + i*beta(k).
 
-        alpha, beta are "real" (conjugacy-symmetric) Fourier-space maps.
         beta is None when m=0 (meaning zero).
         """
 
@@ -144,6 +145,8 @@ class Plm:
         r"""
         Computes real-space maps P_{lm}(s), given Fourier-space map P(k) and set of l-values.
 
+        (Similar to 'class Vlm' but with Fourier and real space exchanged.)
+
         Constructor arguments
         ---------------------
 
@@ -157,13 +160,13 @@ class Plm:
           - self.box: the Box instance
           - self.pk: self-conjugate Fourier-space map, see below.
           - self.ls: sorted list of l-values
-          - self.vli: dictionary (l,i) -> Fourier-space map, where 0 <= i <= 2l, see below.
+          - self.pli: dictionary (l,i) -> real-space map, where 0 <= i <= 2l, see below.
 
         Description
         -----------
 
         Recall the definition:
-           \tilde P_{lm}(s) = \int_k e^{ik.s} P(k) Y_{\ell m}^*(s)
+           \tilde P_{lm}(s) = \int_k e^{ik.s} P(k) Y_{\ell m}(\hat k)^*
 
         We assume that P(k) satisfies:
            P(-k)^* = (-1)^l P(k)
@@ -179,8 +182,19 @@ class Plm:
         For this to make sense, l-values in 'ls' must either be all-even, or all-odd.
         We throw an exception otherwise.
 
-        As in 'class Vlm' it's convenient to work in a real basis.
-        FIXME -- incomplete
+        In implementation, it's convenient to use real spherical harmonics X_{li}(\hat k).
+        (See the bottom of the "FFTs" page of the sphnix docs for their definition.)
+    
+        Define p_{li}(k) by:
+           p_{li}(s) = int_k e^{ik.s} pk(k) X_{li}(\hat k)
+
+        Then p_{li}(k) is "self-conjugate", in the sense that:
+           p_{li}(-k) = p_{li}(k)^*
+
+        The \tP_{lm}(s) maps are given in terms of p_{li}(s) as follows:
+           \tP_{l0}(s) = p_{l0}(k)                                    for m = 0
+           \tP_{lm}(s) = p_{l,2m-1}(k) - i p_{l,2m}(k)                for m > 0
+           \tP_{l,-m}(s) = (-1)^m [ p_{l,2m-1}(k) + i p_{l,2m}(k) ]   for m > 0
         """
 
         # Calls cpp_kernels.multiply_xli_real_space() and core.fft_c2r().
@@ -188,7 +202,7 @@ class Plm:
 
     
     def plm_components(self, l, m):
-        """Returns pair (Re P_{lm}(s), Im P_{lm}(s))."""
+        """Returns real-valued real-space maps (Re \tP_{lm}(s), Im \tP_{lm}(s))."""
         pass
     
     

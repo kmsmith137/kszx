@@ -229,6 +229,21 @@ class Plm:
             return sign * self.pli[(l, 2*am-1)], sign * self.pli[(l, 2*am)]
     
     
+def _to_complex(re, im):
+    """Convert (Re, Im) pair to complex array. Im=None means zero."""
+    if im is None:
+        return re + 0j
+    return re + 1j * im
+
+
+def _negate_map(arr):
+    """Given real-space map f(s) on a periodic grid, return f(-s)."""
+    for ax in range(arr.ndim):
+        idx = (-np.arange(arr.shape[ax])) % arr.shape[ax]
+        arr = np.take(arr, idx, axis=ax)
+    return arr
+
+
 def Qlllm(vlm1, vlm2, l1, l2, l3, m3):
     r"""
     Compute Q^{L1,L2}_{L3,M3}(x), and return it as a pair (r,s) of real-valued real-space maps.
@@ -286,38 +301,72 @@ def Qlllm(vlm1, vlm2, l1, l2, l3, m3):
     return r, s
     
 
-def hP_mean(box, U, P, vlm1, vlm2, l1E, l2E, l1S, l2S):
+def hP_mean(box, uk, f1, f2, pk, l1E, l2E, l1S, l2S):
     r"""
     Computes <\hat P> for a single rank-one estimator and rank-one signal.
 
     Implements the first "boxed" equation in the "main calculation" section,
-    given as a sum over (l3E, l3S, L1, L2, L3, m3E, m3S, M3).
+    of the paper, given as a sum over (l3E, l3S, L1, L2, L3, m3E, m3S, M3).
 
     Note that the Fourier-space weighting U(k) and signal power P(k) must satsify:
 
        U(-k)^* = (-1)^{l1E + l2E} U(k)
        P(-k)^* = (-1)^{l1S + l2S} P(k)
 
-    The 'U' argument is U(k) if (l1E+l2E) is even, or (-iU(k)) if (l1E+l2E) is
+    The 'uk' argument is U(k) if (l1E+l2E) is even, or (-iU(k)) if (l1E+l2E) is
     odd. This convention ensures that the 'U' argument is always a self-conjugate
-    map (U(-k)^* = U(k)). This is convenient, since most kszx functions (e.g.
-    core.fft_c2r() assume that Fourier-space maps are self-conjugate).
+    map (U(-k)^* = U(k)). This is convenient, since most kszx functions (e.g. FFTs
+    assume that Fourier-space maps are self-conjugate).
 
-    The 'P' argument works the sampe way, with sign determined by (l1S+l2S).
+    The 'pk' argument works the sampe way, with sign determined by (l1S+l2S).
 
+    The 'f1' and 'f2' arguments are the real-space maps f_i(x) = W_i(x) F_i(x),
+    in notation from the paper.
+    
     Current implementation is a brute-force sum, organized for code clarity
-    not speed. We call 
-    
-    Arguments:
-    
-      - U: Self-conjugate Fourier-space map, either U(k) or -iU(k)
-    
-      - P: Self-conjugate Fourier-space map, either P(k) or -iP(k)
-    
-      - vlm1, vlm2: instance of class Vlm, representing 
+    not speed.
     """
 
-    pass
+    coeffs = Coeffs(l1E, l2E, l1S, l2S)
+
+    if not coeffs.map5:
+        return 0.0
+
+    vlm1 = Vlm(box, f1, coeffs.L1_vals)
+    vlm2 = Vlm(box, f2, coeffs.L2_vals)
+    plm_u = Plm(box, uk, coeffs.l3E_vals)
+    plm_p = Plm(box, pk, coeffs.l3S_vals)
+
+    L_triples = sorted(set((k[2], k[3], k[4]) for k in coeffs.map5))
+
+    ret = 0.0
+
+    for L1, L2, L3 in L_triples:
+        for M3 in range(-L3, L3+1):
+            q = _to_complex(*Qlllm(vlm1, vlm2, L1, L2, L3, M3))
+
+            for l3E in coeffs.l3E_vals:
+                for l3S in coeffs.l3S_vals:
+                    c = coeffs.map5.get((l3E, l3S, L1, L2, L3), 0)
+                    if c == 0:
+                        continue
+
+                    for m3E in range(-l3E, l3E+1):
+                        m3S = -m3E - M3
+                        if abs(m3S) > l3S:
+                            continue
+
+                        w3j = utils.wigner_3j(l3E, l3S, L3, m3E, m3S, M3)
+                        if w3j == 0:
+                            continue
+
+                        u = _to_complex(*plm_u.plm_components(l3E, m3E))
+                        p = _negate_map(_to_complex(*plm_p.plm_components(l3S, m3S)))
+
+                        integral = box.pixel_volume * np.sum(u * q * p)
+                        ret += c * w3j * integral
+
+    return np.real(ret)
 
 
 ####################################################################################################

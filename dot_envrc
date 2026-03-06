@@ -1,0 +1,67 @@
+# To "opt in" to using this, do 'ln -s dot_envrc .envrc'.
+# See below for more context and setup.
+
+if [[ -d "$CONDA_PREFIX/envs/kszx" ]]; then
+  eval "$(conda shell.zsh activate kszx)"
+else
+  echo "direnv: WARNING — conda env 'kszx' not found, skipping"
+fi
+
+if [[ -f .venv/bin/activate ]]; then
+  source .venv/bin/activate
+else
+  echo "direnv: WARNING — .venv not found, skipping"
+fi
+
+
+####################################################################################################
+#
+# I'm experimenting with an ad hoc system for creating named worktrees (mainly for LLM agents),
+# consisting of two files: .envrc and make_worktree.py.
+#
+# The envrc is just a convenience that automatically switches between envs (conda envs + venvs)
+# when switching between worktrees. This is awkward to set up -- here are the instructions.
+
+
+# Step 1: install direnv
+# brew install direnv             # apple
+# sudo apt install direnv       # ubuntu
+
+# Step 2: install direnv hook
+# eval "$(direnv hook zsh)"  # .zshrc version
+# eval "$(direnv hook zsh)"  # .bashrc version
+
+# Step 3: create venv and pip install there
+# python -m venv --system-site-packages .venv
+# source .venv/bin/activate
+# pip install --no-build-isolation -v -e .
+# deactivate
+
+# Step 4: "opt in" to direnv .envrc
+# ln -s dot_envrc .envrc
+# direnv allow
+
+# Step 5, improve prompt cosmetics, zshrc version (see below for bashrc)
+#  ** NOTE: must come after 'conda initialize' !!! ****
+# export CONDA_CHANGEPS1=false
+# setopt PROMPT_SUBST
+# _env_prompt() {
+#   if [[ -n "$VIRTUAL_ENV" ]]; then
+#     echo "[$(basename "$(dirname "$VIRTUAL_ENV")")] "
+#   elif [[ -n "$CONDA_DEFAULT_ENV" ]]; then
+#     echo "(${CONDA_DEFAULT_ENV}) "
+#   fi
+# }
+# PROMPT='$(_env_prompt)%n@%m %1~ %# '
+
+# Step 5, improve prompt cosmetics, bashrc version (see above for zshrc)
+#  ** NOTE: must come after 'conda initialize' !!! ****
+# export CONDA_CHANGEPS1=false
+# _env_prompt() {
+#     if [[ -n "$VIRTUAL_ENV" ]]; then
+#         echo "[$(basename "$(dirname "$VIRTUAL_ENV")")] "
+#     elif [[ -n "$CONDA_DEFAULT_ENV" ]]; then
+#         echo "(${CONDA_DEFAULT_ENV}) "
+#     fi
+# }
+# PS1='$(_env_prompt)\u@\h \W \$ '

@@ -151,7 +151,7 @@ class Plm:
         ---------------------
 
           - box: instance of class Box
-          - pk: self-conjgate Fourier space map, either P(k) or -iP(k), see below.
+          - pk: self-conjugate Fourier space map, either P(k) or -iP(k), see below.
           - ls: set of nonnegative integers
 
         Members
@@ -176,25 +176,25 @@ class Plm:
         
         The 'pk' constructor arg is P(k) if l is even, or (-iP(k)) if l is odd.
         This ensures that 'pk' is always self-conjugate (i.e. pk[-k]^* = pk[k]).
-        This is convenient, since most kszx functions (e.g. core.fft_c2r() operate
+        This is convenient, since most kszx functions (e.g. core.fft_c2r()) operate
         on self-conjugate Fourier-space maps.
 
         For this to make sense, l-values in 'ls' must either be all-even, or all-odd.
         We throw an exception otherwise.
 
         In implementation, it's convenient to use real spherical harmonics X_{li}(\hat k).
-        (See the bottom of the "FFTs" page of the sphnix docs for their definition.)
-    
-        Define p_{li}(k) by:
+        (See the bottom of the "FFTs" page of the sphinx docs for their definition.)
+
+        Define p_{li}(s) by:
            p_{li}(s) = int_k e^{ik.s} pk(k) X_{li}(\hat k)
 
-        Then p_{li}(k) is "self-conjugate", in the sense that:
-           p_{li}(-k) = p_{li}(k)^*
+        Then p_{li}(s) is real-valued:
+           p_{li}(s)^* = p_{li}(s)
 
         The \tP_{lm}(s) maps are given in terms of p_{li}(s) as follows:
-           \tP_{l0}(s) = p_{l0}(k)                                    for m = 0
-           \tP_{lm}(s) = p_{l,2m-1}(k) - i p_{l,2m}(k)                for m > 0
-           \tP_{l,-m}(s) = (-1)^m [ p_{l,2m-1}(k) + i p_{l,2m}(k) ]   for m > 0
+           \tP_{l0}(s) = p_{l0}(s)                                    for m = 0
+           \tP_{lm}(s) = p_{l,2m-1}(s) - i p_{l,2m}(s)                for m > 0
+           \tP_{l,-m}(s) = (-1)^m [ p_{l,2m-1}(s) + i p_{l,2m}(s) ]   for m > 0
         """
 
         # Calls cpp_kernels.multiply_xli_real_space() and core.fft_c2r().

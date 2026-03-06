@@ -197,13 +197,36 @@ class Plm:
            \tP_{l,-m}(s) = (-1)^m [ p_{l,2m-1}(s) + i p_{l,2m}(s) ]   for m > 0
         """
 
-        # Calls cpp_kernels.multiply_xli_real_space() and core.fft_c2r().
-        pass
+        self.box = box
+        self.pk = pk
+        self.ls = sorted(set(ls))
 
-    
+        parities = set(l % 2 for l in self.ls)
+        if len(parities) > 1:
+            raise RuntimeError('Plm: l-values must be all-even or all-odd')
+
+        tmp = np.empty(box.fourier_space_shape, dtype=complex)
+        self.pli = {}
+
+        for l in self.ls:
+            for i in range(2*l + 1):
+                cpp_kernels.multiply_xli_fourier_space(tmp, pk, l, i, box.npix[2], 1.0, False)
+                self.pli[(l,i)] = core.fft_c2r(box, tmp)
+
     def plm_components(self, l, m):
-        """Returns real-valued real-space maps (Re \tP_{lm}(s), Im \tP_{lm}(s))."""
-        pass
+        """Returns real-valued real-space maps (Re \tP_{lm}(s), Im \tP_{lm}(s)).
+
+        Im is None when m=0 (meaning zero).
+        """
+
+        if m == 0:
+            return self.pli[(l, 0)], None
+        elif m > 0:
+            return self.pli[(l, 2*m-1)], -self.pli[(l, 2*m)]
+        else:
+            am = abs(m)
+            sign = (-1)**am
+            return sign * self.pli[(l, 2*am-1)], sign * self.pli[(l, 2*am)]
     
     
 def Qlllm(vlm1, vlm2, l1, l2, l3, m3):

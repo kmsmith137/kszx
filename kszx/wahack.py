@@ -382,6 +382,38 @@ class TestPipeline:
 
         self.hP_mean = np.real(ret)
 
+        
+    def eval_hP(self, delta1, delta2):
+        r"""Evaluate $\hat P$ on two window-weighted real-space data maps, returning a real scalar.
+
+        The arguments delta1, delta2 are real-space maps $d_i(x) = W_i(x) \delta_i(x)$.
+
+        Reminder: \hat P is defined by
+
+          $\hat P = \int_k U(k) \int_{x_1 x_2} e^{-ik(x_1-x_2)}
+                    d_1(x_1) d_2(x_2) P_{l1E}(\hat k \cdot \hat x_1) P_{l2E}(\hat k \cdot \hat x_2)$
+
+        This equals sigma * map_dot_product(box, uk * alpha1, alpha2), where
+        alpha_i = fft_r2c(box, delta_i, spin=liE), and the sign factor sigma
+        accounts for three phase mismatches:
+
+          1. fft_r2c includes epsilon_l^* but the estimator has no epsilon factor,
+             contributing epsilon_{l1E} * epsilon_{l2E}.
+          2. The x2-integral needs e^{+ik.x2}, i.e. B(-k) = epsilon_{l2E} * alpha2(k)^*
+             (via self-conjugacy), but the dot product already conjugates alpha2.
+          3. self.uk is the self-conjugate version of U(k), related by
+             U(k) = epsilon_{l1E+l2E} * uk(k).
+
+        Combined: sigma = epsilon_{l1E} * epsilon_{l2E} * epsilon_{l1E+l2E}
+                        = +1 if both spins even, -1 otherwise.
+        """
+
+        alpha1 = core.fft_r2c(self.box, delta1, spin=self.l1E)
+        alpha2 = core.fft_r2c(self.box, delta2, spin=self.l2E)
+        dot = core.map_dot_product(self.box, self.uk * alpha1, alpha2)
+        sign = 1 if (self.l1E % 2 == 0 and self.l2E % 2 == 0) else -1
+        return sign * dot
+
 
 ####################################################################################################
 #

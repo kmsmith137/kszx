@@ -27,7 +27,7 @@ def time_multiply_xli_fourier_space(box_nside=1024, niter=10, l=5, i=1):
     npix = (box_nside, box_nside, box_nside//2 + 1)
     dst = np.ones(npix, dtype=complex)
     src = np.ones(npix, dtype=complex)
-    coeff = 1j if (l % 2) else 1+0j
+    coeff = 1.0
 
     t0 = time.time()
     for _ in range(niter):

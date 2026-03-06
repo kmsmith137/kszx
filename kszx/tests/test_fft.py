@@ -10,11 +10,11 @@ import scipy.special
 
 def xli_tp(l, i, theta, phi):
     if i == 0:
-        return np.sqrt(4*np.pi/(2*l+1)) * scipy.special.sph_harm_y(l, 0, theta, phi).real
+        return scipy.special.sph_harm_y(l, 0, theta, phi).real
     elif i % 2:
-        return np.sqrt(8*np.pi/(2*l+1)) * scipy.special.sph_harm_y(l, (i+1)//2, theta, phi).real
+        return scipy.special.sph_harm_y(l, (i+1)//2, theta, phi).real
     else:
-        return np.sqrt(8*np.pi/(2*l+1)) * scipy.special.sph_harm_y(l, (i+1)//2, theta, phi).imag
+        return scipy.special.sph_harm_y(l, (i+1)//2, theta, phi).imag
 
 
 def xli_xyz(l, i, x, y, z):
@@ -42,28 +42,30 @@ def xli_fs_box(l, i, box):
 
 
 def test_xli():
-    """Tests the identity sum_i X_{li}(v) X_{li}^*(w) = P_l(v.w)."""
+    """Tests the identity (4pi/(2l+1)) * sum_i eta_i * X_{li}(v) * X_{li}(w) = P_l(v.w)."""
 
     print('test_xli(): start')
-    
+
     for _ in range(100):
         l = np.random.randint(10)
         v, w = np.random.normal(size=(2,3))
-        
+
         accum = 0.0
         for i in range(2*l+1):
+            eta_i = 1.0 if (i == 0) else 2.0
             xli_v = xli_xyz(l, i, v[0], v[1], v[2])
             xli_w = xli_xyz(l, i, w[0], w[1], w[2])
-            accum += xli_v * xli_w
-        
+            accum += eta_i * xli_v * xli_w
+        accum *= 4*np.pi / (2*l+1)
+
         mu = np.dot(v,w) / (np.dot(v,v) * np.dot(w,w))**0.5
         pl = scipy.special.legendre_p(l, mu)
         eps = np.abs(accum - pl)
         eps = float(eps[0])  # shape (1,) -> scalar
-        
+
         # print(f'{eps=} {l=} {accum=} {pl=}')
         assert eps < 1.0e-13
-    
+
     print('test_xli(): pass')
 
 
@@ -100,7 +102,7 @@ def test_multiply_xli_fourier_space():
         box = helpers.random_box(ndim=3, nmin=3)
         l = np.random.randint(9)
         i = np.random.randint(2*l+1)
-        coeff = np.random.uniform() * (1j if (l % 2) else 1+0j)
+        coeff = np.random.uniform()
         accum = (np.random.uniform() < 0.5)
 
         fs = box.fourier_space_shape

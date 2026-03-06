@@ -3,7 +3,10 @@
 // Multiply a 3-d grid (real-space or Fourier-space) by X_{li}(hat{n}),
 // the real spherical harmonics used in the decomposition:
 //
-//   P_l(khat . rhat) = sum_{i=0}^{2l} X_{li}(khat) X_{li}(rhat)
+//   P_l(khat . rhat) = (4*pi*eps_l^*/(2l+1)) * sum_{i=0}^{2l} eta_i * X_{li}(khat) * X_{li}(rhat)
+//
+// where eta_i = 1 if i=0, 2 if i>0, and X_{li} are bare (unnormalized)
+// real spherical harmonics: Y_{l0}, Re Y_{lm}, Im Y_{lm}.
 //
 // This decomposition allows spin-l FFTs to be written as a sum of
 // (2l+1) ordinary FFTs. See "FFT implementation notes" in fft.rst.
@@ -64,17 +67,16 @@ struct xlm_helper
         reim = (m > 0) && (i == 2*m);
 
         // Compute normalization constant C such that, on the unit sphere:
-        //   C * Re/Im((x+iy)^m) = X_{l=m, i}(nhat)
+        //   C * Re/Im((x+iy)^m) = Y_{l=m, i}(nhat)
         //
         // Since the three-term recurrence is linear and preserves
         // the normalization, this initial value at l=m propagates
-        // correctly to give X_{l,i} at the target l.
+        // correctly to give Y_{l,i} at the target l.
         //
-        // C^2 = [m>0 ? 2 : 1] / (2l+1) * prod_{j=1}^{m} (2j+1)/(2j)
+        // C^2 = (1/(4*pi)) * prod_{j=1}^{m} (2j+1)/(2j)
         // Sign: (-1)^m (Condon-Shortley phase).
 
-        C = (m > 0) ? 2 : 1;
-        C /= (2*l+1);
+        C = 1.0 / (4*M_PI);
 
         for (int j = 1; j <= m; j++)
             C *= (1.0 + 1.0/(2*j));
@@ -269,11 +271,12 @@ void multiply_xli_real_space(py::array_t<double> &dst_, py::array_t<const double
 // (X_{li} is undefined at k=0 and ill-defined at Nyquist).
 // If Accum=true, adds to dst; otherwise overwrites dst.
 template<bool Accum>
-inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_helper<const complex<double>> &src, xlm_helper &h, long nz, complex<double> coeff)
+inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_helper<const complex<double>> &src, xlm_helper &h, long nz, double coeff)
 {
     if (h.l == 0) {
-        // For l=0, X_{00} = 1 everywhere, so just scale. No DC/Nyquist zeroing.
-        _multiply_x00<Accum> (dst, src, coeff);
+        // For l=0, X_{00} = 1/(4pi)^{1/2} everywhere (constant), so just scale. No DC/Nyquist zeroing.
+        double c00 = coeff / sqrt(4*M_PI);
+        _multiply_x00<Accum> (dst, src, complex<double>(c00, 0.0));
         return;
     }
 
@@ -299,7 +302,7 @@ inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_
                 bool nyq = (2*i0 == dst.n0) || (2*i1 == dst.n1) || (2*i2 == nz);
                 
                 double xli = (nyq || dc) ? 0.0 : h.get(x, y, z);
-                complex<double> v = coeff * xli * sp[i2 * src.s2];
+                complex<double> v = (coeff * xli) * sp[i2 * src.s2];
                 
                 if constexpr (Accum)
                     dp[i2 * dst.s2] += v;
@@ -314,10 +317,7 @@ inline void _multiply_xli_fourier_space(grid_helper<complex<double>> &dst, grid_
 // Python-facing wrapper: multiply a Fourier-space grid by coeff * X_{li}(khat).
 // nz is the real-space grid size along the last axis (needed because the
 // rfft output shape nz/2+1 doesn't uniquely determine nz).
-//
-// The coeff must be purely real for even l, or purely imaginary for odd l,
-// consistent with the epsilon_l convention (epsilon_l = i for odd l, 1 for even l).
-void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<const complex<double>> &src_, int l, int i, long nz, complex<double> coeff, bool accum)
+void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<const complex<double>> &src_, int l, int i, long nz, double coeff, bool accum)
 {
     grid_helper<complex<double>> dst(dst_);
     grid_helper<const complex<double>> src(src_);
@@ -328,17 +328,6 @@ void multiply_xli_fourier_space(py::array_t<complex<double>> &dst_, py::array_t<
     if (dst.n2 != (nz/2)+1)
         throw std::runtime_error("dst/src map shape is inconsistent with 'nz' argument");
 
-    // Validate that coeff respects the epsilon_l parity constraint.
-    double x = (l & 1) ? coeff.real() : coeff.imag();
-
-    if (x != 0.0) {
-        std::stringstream ss;
-        ss << "multiply_xli_fourier_space(l=" << l << "): expected coeff."
-           << ((l & 1) ? "real" : "imag")
-           << "=0, got " << x;
-        throw std::runtime_error(ss.str());
-    }
-    
     if (accum)
         _multiply_xli_fourier_space<true> (dst, src, h, nz, coeff);
     else

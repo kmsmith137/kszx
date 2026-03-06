@@ -93,11 +93,8 @@ class Vlm:
 
         for l in self.ls:
             for i in range(2*l + 1):
-                # multiply_xli_real_space multiplies by X_{li}, but we need Z_{li} (unnormalized).
-                # X_{l0} = sqrt(4pi/(2l+1)) * Z_{l0}, X_{li} = sqrt(8pi/(2l+1)) * Z_{li} for i>0.
-                # We want FFT(f * Z_{li}) = (1/c_{li}) * FFT(f * X_{li}).
-                coeff = np.sqrt((2*l + 1) / (4*np.pi)) if (i == 0) else np.sqrt((2*l + 1) / (8*np.pi))
-                cpp_kernels.multiply_xli_real_space(tmp, f, l, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, coeff, False)
+                # multiply_xli_real_space multiplies by Y_{li} (bare spherical harmonic).
+                cpp_kernels.multiply_xli_real_space(tmp, f, l, i, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, 1.0, False)
                 self.vli[(l,i)] = core.fft_r2c(box, tmp)
 
     def vlm_components(self, l, m):

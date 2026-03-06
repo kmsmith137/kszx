@@ -184,30 +184,8 @@ FFTs with nonzero "spin"
 
 .. _fft_implementation:
 
-FFT implementation notes (current implementation)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-We implement spin-$l$ FFTs by writing:
-
-$$P_l({\hat k} \cdot {\hat r}) = \sum_{i=0}^{2l} X_{li}({\hat k}) X_{li}({\hat r})$$
-
-where we define real spherical harmonics $\{ X_{li} \}_{0 \le i < 2l+1}$ by:
-
-$$X_{li}({\hat r}) = \begin{cases}
-\sqrt{4\pi/(2l+1)} \, Y_{l0}({\hat r}) & \mbox{if $i=0$} \\
-\sqrt{8\pi/(2l+1)} \, \mbox{Re} \, Y_{lm}({\hat r}) & \mbox{if $i=2m-1$ where $m\ge 1$} \\
-\sqrt{8\pi/(2l+1)} \, \mbox{Im} \, Y_{lm}({\hat r}) & \mbox{if $i=2m$ where $m\ge 1$}
-\end{cases}$$
-
-Then the spin-$l$ FFT can be written as a sum of $(2l+1)$ ordinary (spin-0) FFTs.
-We write this out explicitly for the c2r transform:
-
-$$f(x) &= V_{box}^{-1} \sum_k \epsilon_l P_l({\hat k} \cdot {\hat r}) f(k) e^{ik\cdot x} \\
-&= \epsilon_l V_{box}^{-1} \sum_{i=0}^{2l} X_{li}(x) \sum_k X_{li}(k) f(k) e^{ik\cdot x}$$
-
-
-FFT implementation notes (proposed alternate implementation)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Spin-l FFT implementation notes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 We implement spin-$l$ FFTs by writing:
 

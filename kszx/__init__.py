@@ -12,6 +12,7 @@ from .core import \
     multiply_r_component, \
     apply_partial_derivative, \
     zero_nyquist_modes, \
+    enforce_self_conjugate, \
     simulate_white_noise, \
     simulate_gaussian_field, \
     estimate_power_spectrum, \

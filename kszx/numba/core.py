@@ -49,6 +49,63 @@ def _sqrt_pk(box, pk, regulate):
     return np.sqrt(pk)
 
     
+def enforce_self_conjugate(box, arr, preserve_variance=False):
+    r"""Modify a Fourier-space map in place so that the self-conjugacy condition $f(-k)^* = f(k)$ is satisfied.
+
+    In an r2c FFT layout, the stored array has shape ``box.fourier_space_shape``, which only
+    includes modes with $k_{d-1} \ge 0$. Most modes are stored independently of their conjugate
+    partner at $-k$. However, modes where $k_{d-1} = 0$ (and $k_{d-1} = N_{d-1}/2$ when $N_{d-1}$
+    is even) have their conjugate partner also present in the array. For these "self-conjugate"
+    modes, this function enforces $f(-k)^* = f(k)$, which is the condition for the field to be
+    real-valued in real space.
+
+    Each affected pair $(f(k),\, f(-k))$ is replaced by:
+
+    - ``preserve_variance=False`` (default): $(f(k) + f(-k)^*) / 2$.
+      This is the orthogonal projection onto the self-conjugate subspace, and is idempotent.
+
+    - ``preserve_variance=True``: $(f(k) + f(-k)^*) / \sqrt{2}$.
+      This preserves the variance of each mode when the input has i.i.d. real and imaginary
+      parts (as in :func:`simulate_white_noise`).
+
+    Function args:
+
+        - ``box`` (kszx.Box): defines the grid geometry.
+
+        - ``arr`` (numpy array): Fourier-space map to modify in place.
+          Shape must be ``box.fourier_space_shape``, dtype must be complex.
+
+        - ``preserve_variance`` (bool): see above. Default is False.
+    """
+
+    assert isinstance(box, Box)
+    assert arr.shape == box.fourier_space_shape
+    assert arr.dtype == complex
+
+    nd = box.ndim
+
+    # Select the "self-conjugate slab": modes where k_{d-1} is 0 or Nyquist.
+    n = box.npix[nd-1]
+    s1 = (slice(None),) * (nd-1)
+    s2 = slice(0,1) if (n % 2) else slice(0, (n//2)+1, (n//2))
+    tview = arr[s1+(s2,)]
+    tcopy = np.conj(tview)   # copy and complex conjugate
+
+    # Apply parity operation k -> (-k) to 'tcopy'.
+    for axis in range(nd-1):
+        n = box.npix[axis]
+        s1 = (slice(None),) * axis
+        s2fwd = (slice(1,n),)
+        s2rev = (slice(n-1,0,-1),)
+        s3 = (slice(None),) * (nd-axis-1)
+        u = np.copy(tcopy[s1+s2rev+s3])
+        tcopy[s1+s2fwd+s3] = u
+
+    # Replace f(k) by (f(k) + f(-k)^*) / factor.
+    tview += tcopy
+    tview *= np.sqrt(0.5) if preserve_variance else 0.5
+
+
 def simulate_white_noise(box, *, fourier):
     r"""Simulate white noise, in either real space or Fourier space, normalized to $P(k)=1$.
 
@@ -82,34 +139,12 @@ def simulate_white_noise(box, *, fourier):
         return numba_utils.random.normal(size=box.real_space_shape, scale=rms)
         
     # Simulate white noise in Fourier space.
-    nd = box.ndim
     rms = np.sqrt(0.5 * box.box_volume)
-    ret = np.empty(box.fourier_space_shape, dtype=np.complex128)        
+    ret = np.empty(box.fourier_space_shape, dtype=np.complex128)
     ret.real = numba_utils.random_normal(size=box.fourier_space_shape, scale=rms)
     ret.imag = numba_utils.random_normal(size=box.fourier_space_shape, scale=rms)
 
-    # The rest of this function imposes the reality condition f(-k) = f(k)^*.
-    
-    # t = modes where k_{nd-1} is self-conjugate
-    n = box.npix[nd-1]
-    s1 = (slice(None),) * (nd-1)
-    s2 = slice(0,1) if (n % 2) else slice(0, (n//2)+1, (n//2))
-    tview = ret[s1+(s2,)] 
-    tcopy = np.conj(tview)   # copy and complex conjugate
-
-    # Apply parity operation k -> (-k) to 'tcopy'.
-    for axis in range(nd-1):
-        n = box.npix[axis]
-        s1 = (slice(None),) * axis
-        s2fwd = (slice(1,n),)
-        s2rev = (slice(n-1,0,-1),)
-        s3 = (slice(None),) * (nd-axis-1)
-        u = np.copy(tcopy[s1+s2rev+s3])
-        tcopy[s1+s2fwd+s3] = u
-
-    # Replace f(k) by (f(k) - f(-k)^*) / sqrt(2)
-    tview += tcopy
-    tview *= np.sqrt(0.5)   # preserve variance
+    enforce_self_conjugate(box, ret, preserve_variance=True)
     return ret
 
 

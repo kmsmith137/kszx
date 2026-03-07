@@ -283,3 +283,43 @@ def test_spin_12_ffts():
         assert eps < 1.0e-12
         
     print('test_spin_12_ffts(): pass')
+
+
+####################################################################################################
+
+
+def test_enforce_self_conjugate():
+    """Tests enforce_self_conjugate() for idempotency and correctness."""
+
+    print('test_enforce_self_conjugate(): start')
+
+    for iouter in range(100):
+        box = helpers.random_box()
+
+        # Test 1: preserve_variance=False is idempotent on arbitrary data.
+        arr = np.random.normal(size=box.fourier_space_shape) + \
+              1j * np.random.normal(size=box.fourier_space_shape)
+        core.enforce_self_conjugate(box, arr, preserve_variance=False)
+        arr_copy = arr.copy()
+        core.enforce_self_conjugate(box, arr, preserve_variance=False)
+        eps = np.max(np.abs(arr - arr_copy))
+        assert eps < 1.0e-13, f'Test 1 failed: {eps=}'
+
+        # Test 2: simulate_white_noise(fourier=True) produces self-conjugate data,
+        # so enforce_self_conjugate(preserve_variance=False) should be a no-op.
+        arr = core.simulate_white_noise(box, fourier=True)
+        arr_copy = arr.copy()
+        core.enforce_self_conjugate(box, arr, preserve_variance=False)
+        eps = np.max(np.abs(arr - arr_copy))
+        assert eps < 1.0e-13, f'Test 2 failed: {eps=}'
+
+        # Test 3: fft_r2c of real data is self-conjugate by construction,
+        # so enforce_self_conjugate should be a no-op (up to FFT roundoff).
+        x = np.random.normal(size=box.real_space_shape)
+        arr = core.fft_r2c(box, x)
+        arr_copy = arr.copy()
+        core.enforce_self_conjugate(box, arr, preserve_variance=False)
+        eps = np.max(np.abs(arr - arr_copy)) / np.max(np.abs(arr_copy))
+        assert eps < 1.0e-12, f'Test 3 failed: {eps=}'
+
+    print('test_enforce_self_conjugate(): pass')

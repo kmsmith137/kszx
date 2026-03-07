@@ -448,6 +448,38 @@ class TestPipeline:
         return delta1, delta2
 
 
+    @staticmethod
+    def make_random():
+        """Return a TestPipeline with random parameters, for testing."""
+
+        from .tests import helpers
+
+        box = helpers.random_box(ndim=3, avoid_small_r=True)
+
+        # Random l-values in 0:5, retry until Coeffs is non-trivial.
+        while True:
+            l1E, l2E = np.random.randint(0, 5, size=2)
+            l1S, l2S = np.random.randint(0, 5, size=2)
+            if Coeffs(l1E, l2E, l1S, l2S).map5:
+                break
+
+        f1 = np.random.uniform(0.01, 1.0, size=box.real_space_shape)
+        f2 = np.random.uniform(0.01, 1.0, size=box.real_space_shape)
+
+        uk = _random_positive_fourier_map(box)
+        pk = _random_positive_fourier_map(box)
+
+        return TestPipeline(box, uk, f1, f2, pk, l1E, l2E, l1S, l2S)
+
+
+def _random_positive_fourier_map(box):
+    """Return a random self-conjugate Fourier-space map with positive real entries, zeroed at DC/Nyquist."""
+    arr = np.random.uniform(0.01, 1.0, size=box.fourier_space_shape).astype(complex)
+    core.enforce_self_conjugate(box, arr)
+    core.zero_nyquist_modes(box, arr, zero_dc=True)
+    return arr
+
+
 ####################################################################################################
 #
 # Helpers for flattening/unflattening arrays with conjugacy constraint arr[i]* = arr[(-i) % n].

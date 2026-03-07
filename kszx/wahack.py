@@ -3,6 +3,7 @@ from . import core
 from . import cpp_kernels
 from . import utils
 
+import itertools
 import numpy as np
 
 
@@ -446,6 +447,33 @@ class TestPipeline:
             delta2 = -delta2
 
         return delta1, delta2
+
+
+    def test_mc(self, niter=None):
+        """Check that self.hP_mean equals the MC average of simulate() -> eval_hP()."""
+
+        print(self.box)
+        ls = (self.l1E, self.l2E, self.l1S, self.l2S)
+
+        sum_x = 0.0
+        sum_x2 = 0.0
+
+        for i in (range(niter) if (niter is not None) else itertools.count()):
+            delta1, delta2 = self.simulate()
+            x = self.eval_hP(self.f1 * delta1, self.f2 * delta2)
+
+            nmc = i + 1
+            sum_x += x
+            sum_x2 += x**2
+            mean = sum_x / nmc
+
+            if nmc >= 10:
+                var = (sum_x2 - nmc * mean**2) / (nmc - 1)
+                err = np.sqrt(max(var, 0.0) / nmc)
+                nsigma = abs(self.hP_mean - mean) / err if err > 0 else np.inf
+                print(f'  {ls}  nmc={nmc}  predicted={self.hP_mean:.6e}  empirical={mean:.6e}  error={err:.6e}  nsigma={nsigma:.2f}')
+            else:
+                print(f'  {ls}  nmc={nmc}  predicted={self.hP_mean:.6e}  empirical={mean:.6e}')
 
 
     @staticmethod

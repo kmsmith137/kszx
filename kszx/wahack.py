@@ -477,19 +477,26 @@ class TestPipeline:
 
 
     @staticmethod
-    def make_random():
-        """Return a TestPipeline with random parameters, for testing."""
+    def make_random(box=None, l1E=None, l2E=None, l1S=None, l2S=None):
+        """Return a TestPipeline with random parameters, for testing.
+
+        Parameters which are None are chosen randomly.
+        """
 
         from .tests import helpers
 
-        box = helpers.random_box(ndim=3, avoid_small_r=True)
+        if box is None:
+            box = helpers.random_box(ndim=3, avoid_small_r=True)
 
         # Random l-values in 0:5, retry until Coeffs is non-trivial.
         while True:
-            l1E, l2E = np.random.randint(0, 5, size=2)
-            l1S, l2S = np.random.randint(0, 5, size=2)
-            if Coeffs(l1E, l2E, l1S, l2S).map5:
+            _l1E = l1E if (l1E is not None) else np.random.randint(0, 5)
+            _l2E = l2E if (l2E is not None) else np.random.randint(0, 5)
+            _l1S = l1S if (l1S is not None) else np.random.randint(0, 5)
+            _l2S = l2S if (l2S is not None) else np.random.randint(0, 5)
+            if Coeffs(_l1E, _l2E, _l1S, _l2S).map5:
                 break
+        l1E, l2E, l1S, l2S = _l1E, _l2E, _l1S, _l2S
 
         f1 = np.random.uniform(0.01, 1.0, size=box.real_space_shape)
         f2 = np.random.uniform(0.01, 1.0, size=box.real_space_shape)

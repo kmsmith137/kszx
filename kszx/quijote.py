@@ -244,6 +244,147 @@ def _get_h(sim_type, realization=None):
     return _get_cosmology_dict(sim_type, realization)['h']
 
 
+# Pre-computed scalar_amp (As) values for each fixed-cosmology sim type.
+# Obtained by running CAMB with tau=0.0561 and iterating to match the target sigma8.
+# To regenerate: for each cosmology, run CAMB with trial As, measure sigma8,
+# then rescale As by (sigma8_target / sigma8_trial)**2.
+_scalar_amp = {
+    'fiducial':  2.134020e-09,
+    'Om_p':      2.039950e-09,
+    'Om_m':      2.237864e-09,
+    'Ob2_p':     2.185607e-09,
+    'Ob2_m':     2.085244e-09,
+    'h_p':       1.998786e-09,
+    'h_m':       2.283621e-09,
+    'ns_p':      2.101942e-09,
+    'ns_m':      2.166234e-09,
+    's8_p':      2.211473e-09,
+    's8_m':      2.057947e-09,
+    'Mnu_p':     2.242728e-09,
+    'Mnu_pp':    2.362603e-09,
+    'Mnu_ppp':   2.594518e-09,
+    'w_p':       2.084677e-09,
+    'w_m':       2.190029e-09,
+}
+
+# Default optical depth (Planck 2018). Quijote doesn't specify tau since it
+# doesn't affect N-body dynamics; this value is only used for CMB C_l.
+_default_tau = 0.0561
+
+
+def cosmological_params(sim_type, realization=None):
+    r"""Return a :class:`~kszx.CosmologicalParams` for a Quijote simulation.
+
+    The scalar amplitude (As) is pre-calibrated to match the simulation's sigma8.
+    The optical depth tau is set to 0.0561 (Planck 2018), since Quijote does not
+    specify it (tau does not affect the matter power spectrum).
+
+    Args:
+        sim_type (str): Simulation type, e.g. 'fiducial', 'Om_p'.
+        realization (int or None): Required for latin_hypercube/BSQ.
+
+    Returns:
+        :class:`~kszx.CosmologicalParams`
+
+    Raises:
+        ValueError: if the cosmology has w != -1 (e.g. w_p, w_m), since
+        :class:`~kszx.Cosmology` does not currently support w != -1.
+    """
+
+    from .Cosmology import CosmologicalParams
+
+    d = _get_cosmology_dict(sim_type, realization)
+
+    w = d.get('w', -1.0)
+    if abs(w - (-1.0)) > 1e-6:
+        raise ValueError(
+            f"cosmological_params('{sim_type}'): w={w} is not supported "
+            f"(kszx.Cosmology does not currently pass w to CAMB)"
+        )
+
+    p = CosmologicalParams()
+    p.h = d['h']
+    p.ns = d['ns']
+    p.ombh2 = d['Ob'] * d['h']**2
+    p.omch2 = (d['Om'] - d['Ob']) * d['h']**2
+    p.mnu = d.get('Mnu', 0.0)
+    p.tau = _default_tau
+
+    # Look up pre-computed As. For per-realization sim types (latin_hypercube, BSQ),
+    # As is not pre-computed and must be solved at runtime.
+    # First, find the canonical sim_type key for _scalar_amp lookup.
+    _base = sim_type
+    for alias, canonical in [
+        ('fiducial_ZA', 'fiducial'), ('fiducial_LR', 'fiducial'), ('fiducial_HR', 'fiducial'),
+        ('DC_p', 'fiducial'), ('DC_m', 'fiducial'),
+        ('LC_p', 'fiducial'), ('LC_m', 'fiducial'),
+        ('EQ_p', 'fiducial'), ('EQ_m', 'fiducial'),
+        ('OR_CMB_p', 'fiducial'), ('OR_CMB_m', 'fiducial'),
+        ('OR_LSS_p', 'fiducial'), ('OR_LSS_m', 'fiducial'),
+        ('fR_p', 'fiducial'), ('fR_pp', 'fiducial'),
+        ('fR_ppp', 'fiducial'), ('fR_pppp', 'fiducial'),
+    ]:
+        if sim_type == alias:
+            _base = canonical
+            break
+
+    if _base in _scalar_amp:
+        p.scalar_amp = _scalar_amp[_base]
+    elif sim_type in _per_realization_sim_types:
+        p.scalar_amp = _solve_scalar_amp(d, p.tau)
+    else:
+        raise ValueError(f"No pre-computed As for sim_type='{sim_type}'")
+
+    return p
+
+
+def cosmology(sim_type, realization=None, **kwargs):
+    r"""Return a :class:`~kszx.Cosmology` for a Quijote simulation.
+
+    This is a convenience wrapper around :func:`cosmological_params`:
+
+        cosmo = kszx.quijote.cosmology('fiducial')
+        pk = cosmo.Plin_z0(k)
+
+    Args:
+        sim_type (str): Simulation type, e.g. 'fiducial', 'Om_p'.
+        realization (int or None): Required for latin_hypercube/BSQ.
+        **kwargs: Passed to :class:`~kszx.Cosmology` constructor (e.g. ``lmax``).
+
+    Returns:
+        :class:`~kszx.Cosmology`
+    """
+
+    from .Cosmology import Cosmology
+
+    p = cosmological_params(sim_type, realization)
+    return Cosmology(p, **kwargs)
+
+
+def _solve_scalar_amp(cosmo_dict, tau, As_trial=2.1e-9):
+    """Solve for As that gives the target sigma8, by running CAMB once and rescaling."""
+
+    import camb
+
+    d = cosmo_dict
+    w = d.get('w', -1.0)
+    if abs(w - (-1.0)) > 1e-6:
+        raise ValueError(f"_solve_scalar_amp(): w={w} is not supported")
+    cp = camb.CAMBparams()
+    cp.set_cosmology(
+        H0=100*d['h'], ombh2=d['Ob']*d['h']**2,
+        omch2=(d['Om']-d['Ob'])*d['h']**2,
+        mnu=d.get('Mnu', 0.0), tau=tau,
+    )
+    cp.InitPower.set_params(As=As_trial, ns=d['ns'])
+    cp.set_matter_power(redshifts=[0], kmax=10.0)
+    cp.NonLinear = camb.model.NonLinear_none
+
+    results = camb.get_results(cp)
+    sigma8_trial = results.get_sigma8_0()
+    return As_trial * (d['sigma8'] / sigma8_trial) ** 2
+
+
 def _get_lh_params_cached(lh_type):
     """Return cached LH parameter dict (loading from disk if needed)."""
     if lh_type not in _lh_params_cache:

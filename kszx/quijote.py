@@ -661,7 +661,7 @@ def _snapshot_to_physical(hdr, data, h):
 # Bulk download
 
 
-def download(sim_type, realizations, products=('halos',), redshifts=(0,)):
+def download(sim_type, realizations, products=('halos', 'pk', 'linear_pk'), redshifts=(0,)):
     r"""Bulk-download Quijote data via Globus.
 
     Submits a single Globus transfer task for all requested files, which is much
@@ -684,6 +684,11 @@ def download(sim_type, realizations, products=('halos',), redshifts=(0,)):
         # Download FoF halos and power spectra for first 1000 fiducial sims at z=0
         kszx.quijote.download('fiducial', 1000, products=('halos','pk'), redshifts=(0,))
     """
+    _valid_products = {'halos', 'pk', 'snapshots', 'linear_pk'}
+    bad = set(products) - _valid_products
+    if bad:
+        raise ValueError(f"Invalid products: {bad}. Must be a subset of {sorted(_valid_products)}")
+
     _check_sim_type(sim_type)
 
     if isinstance(realizations, int):

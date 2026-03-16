@@ -18,6 +18,30 @@ if __name__ == '__main__':
     p = subparsers.add_parser('download_sdss')
     p.add_argument('survey', help='Survey name such as CMASS_North')
 
+    from .quijote import _sim_types, _valid_redshifts
+    _sim_types_str = ', '.join(sorted(_sim_types.keys()))
+    _redshifts_str = ', '.join(str(z) for z in _valid_redshifts)
+
+    p = subparsers.add_parser(
+        'download_quijote',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Download Quijote simulation data via Globus.',
+        epilog=(
+            f'Available sim types:\n  {_sim_types_str}\n\n'
+            f'Available redshifts:\n  {_redshifts_str}\n\n'
+            'By default, downloads halos, pk, and linear_pk (not snapshots).\n'
+            'Use -s to also download snapshots.\n\n'
+            'Examples:\n'
+            '  python -m kszx download_quijote 100\n'
+            '  python -m kszx download_quijote 500 -t Om_p -z 0.5\n'
+            '  python -m kszx download_quijote 10 -s\n'
+        ),
+    )
+    p.add_argument('N', type=int, help='number of realizations to download (downloads realizations 0..N-1)')
+    p.add_argument('-t', metavar='SIM_TYPE', default='fiducial', help='simulation type (default: fiducial)')
+    p.add_argument('-z', metavar='REDSHIFT', type=float, default=0.0, help='redshift (default: 0)')
+    p.add_argument('-s', action='store_true', help='also download snapshots')
+
     p = subparsers.add_parser('show')
     p.add_argument('filename')
 
@@ -47,6 +71,12 @@ if __name__ == '__main__':
     elif args.command == 'download_sdss':
         from . import sdss
         sdss.download(args.survey)
+    elif args.command == 'download_quijote':
+        from . import quijote
+        products = ['halos', 'pk', 'linear_pk']
+        if args.s:
+            products.append('snapshots')
+        quijote.download(args.t, args.N, products=products, redshifts=(args.z,))
     elif args.command == 'show':
         from . import io_utils
         io_utils.show_file(args.filename)

@@ -8,6 +8,11 @@
 
   - Only do 'git commit' if the most recent prompt specifically asks for it.
   
-  - All shell commands must be run in the `kszx` conda environment. Prefix every Bash command with `conda run -n kszx --no-capture-output` or activate the environment first.
+  - Environment setup: every Bash command must run inside both the `kszx` conda env
+    and the project venv. The simplest way is to prefix commands with:
+        conda activate kszx && source .venv/bin/activate &&
+    For example:
+        conda activate kszx && source .venv/bin/activate && python my_script.py
+    Do NOT use `conda run -n kszx` (it has quoting issues and doesn't activate the venv).  
 
   - Useful documentation is in `docs/source/*.rst` (in addition to docstrings).

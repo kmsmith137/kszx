@@ -21,7 +21,7 @@ def read_cmb(freq, dr, *, night=False, download=False):
 
     Function args:
     
-      - ``freq`` (integer): either 90, 150, or 220.
+      - ``freq``: either 90, 150, or 220 (integer), or 'nilc' (string).
       - ``dr`` (integer): currently, ``dr=5`` and ``dr=6`` are supported.
       - ``night`` (boolean): either True (for night) or False (for daynight).
       - ``download`` (boolean): if True, then all needed data files will be auto-downloaded.
@@ -177,8 +177,12 @@ def _act_nersc_portal_path(relpath, download=False, dlfunc=None):
 
 def _cmb_filename(freq, dr, night=False, download=False, dlfunc=None):
     time = 'night' if night else 'daynight'
-    
-    if dr == 5:
+
+    if freq == 'nilc':
+        if dr != 6:
+            raise RuntimeError(f'ACT NILC maps are only available for dr=6')
+        relpath = 'nilc/published/act-planck_dr6.02_nilc_blackbody_T.fits'
+    elif dr == 5:
         relpath = f'act_planck_dr5.01_s08s18_AA_f{freq:03d}_{time}_map_srcfree.fits'
     elif dr == 6:
         relpath = f'maps/published/act-planck_dr6.02_coadd_AA_{time}_f{freq:03d}_map_srcfree.fits'
@@ -230,12 +234,16 @@ def _nilc_wide_mask_filename(download=False, dlfunc=None):
 
 def _read_map(filename):
     """Called by read_cmb() and read_ivar()."""
-    
+
     print(f'Reading {filename}\n', end='')
 
     # FIXME is there a way to avoid reading TQU, if we only want T?
     m = pixell.enmap.read_map(filename)
+
+    if m.ndim == 2:
+        return m
+
     assert m.ndim == 3
-    
+
     # Use of .copy() saves memory, by keeping T data while dropping reference to TQU data.
     return m[0].copy()

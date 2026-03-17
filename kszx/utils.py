@@ -329,8 +329,8 @@ def dblquad(f, xmin, xmax, ymin, ymax, *, epsabs=0.0, epsrel=1.0e-4):
       - The 'ymin' and 'ymax' arguments can either be floats or functions of x
     """
 
-    ff = lambda x,y: f(y,x)  # swap
-    return scipy.integrate.dblquad(f, xmin, xmax, ymin, ymax, epsabs=epsabs, epsrel=epsrel)[0]
+    ff = lambda y,x: f(x,y)  # scipy dblquad calls func(y,x), we want f(x,y)
+    return scipy.integrate.dblquad(ff, xmin, xmax, ymin, ymax, epsabs=epsabs, epsrel=epsrel)[0]
 
 
 def spline1d(xvec, yvec):

@@ -1,6 +1,8 @@
 # Project: kszx
 
   - Unless otherwise specified, use units (comoving Mpc) for distances and times, and (Msol) for masses.
+    Velocities should be dimensioness (c=1), not km/s.
+    
     Note that we don't use h-units. If you're calling an external library which does use h-units, make
     sure to insert factors of h (or h^{-1}) if needed.
     

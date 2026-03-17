@@ -124,8 +124,8 @@ py::tuple kbin_average(py::array_t<const double> &fk, py::array_t<const double> 
     
     // Run PSE kernel.
     
-    py::array_t<double> ret_fk({nkbins});
-    py::array_t<long> ret_bcounts({nkbins});
+    py::array_t<double> ret_fk(nkbins);
+    py::array_t<long> ret_bcounts(nkbins);
     
     double *out_fk = ret_fk.mutable_data();
     long *out_bcounts = ret_bcounts.mutable_data();

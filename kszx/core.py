@@ -240,13 +240,13 @@ def interpolate_points(box, arr, points, kernel, fft=False, spin=0, periodic=Fal
         raise RuntimeError("kszx.interpolate_points(): expected 'box' arg to be kszx.Box object, got {box = }")
     if kernel is None:
         raise RuntimeError("kszx.interpolate_points(): 'kernel' arg must be specified")
-    if box.ndim != 3:
-        raise RuntimeError('kszx.interpolate_points(): currently only ndim==3 is supported')
+    if box.ndim not in (2, 3):
+        raise RuntimeError('kszx.interpolate_points(): only ndim==2 or ndim==3 is supported')
 
     arr = utils.asarray(arr, 'kszx.interpolate_points()', 'arr')
     points = utils.asarray(points, 'kszx.interpolate_points()', 'points', dtype=float)
     kernel = kernel.lower()
-    
+
     if (points.ndim != 2) or (points.shape[1] != box.ndim):
         raise RuntimeError(f"kszx.interpolate_points(): expected points.shape=(N,{box.ndim}), got shape {points.shape}")
 
@@ -262,13 +262,15 @@ def interpolate_points(box, arr, points, kernel, fft=False, spin=0, periodic=Fal
 
     if fft:
         arr = fft_c2r(box, arr, spin=spin)
-        
+
     if kernel == 'cic':
-        return cpp_kernels.cic_interpolate_3d(arr, points, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, periodic)
+        cpp_func = cpp_kernels.cic_interpolate_2d if (box.ndim == 2) else cpp_kernels.cic_interpolate_3d
     elif kernel == 'cubic':
-        return cpp_kernels.cubic_interpolate_3d(arr, points, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, periodic)
+        cpp_func = cpp_kernels.cubic_interpolate_2d if (box.ndim == 2) else cpp_kernels.cubic_interpolate_3d
     else:
         raise RuntimeError(f'kszx.interpolate_points(): {kernel=} is not supported')
+
+    return cpp_func(arr, points, *tuple(box.lpos), box.pixsize, periodic)
 
 
 def _check_weights(box, points, weights, prefix=''):
@@ -372,8 +374,8 @@ def grid_points(box, points, weights=None, rpoints=None, rweights=None, kernel=N
         raise RuntimeError("kszx.grid_points(): 'kernel' arg must be specified")
     if (rpoints is None) and (rweights is not None):
         raise RuntimeError("kszx.grid_points(): 'rpoints' arg is None, but 'rweights' arg is not None")
-    if box.ndim != 3:
-        raise RuntimeError('kszx.grid_points(): currently only ndim==3 is supported')
+    if box.ndim not in (2, 3):
+        raise RuntimeError('kszx.grid_points(): only ndim==2 or ndim==3 is supported')
     if (spin != 0) and (not fft):
         raise RuntimeError("kszx.grid_points(): 'spin' argument was specified with fft=False")
     if compensate and (not fft):
@@ -385,26 +387,27 @@ def grid_points(box, points, weights=None, rpoints=None, rweights=None, kernel=N
     rpoints = utils.asarray(rpoints, 'kszx.grid_points()', 'rpoints', dtype=float, allow_none=True)
     rweights = utils.asarray(rweights, 'kszx.grid_points()', 'rweights', dtype=float, allow_none=True)
     kernel = kernel.lower()
-    
+
     if kernel == 'cic':
-        cpp_kernel = cpp_kernels.cic_grid_3d
+        cpp_kernel = cpp_kernels.cic_grid_2d if (box.ndim == 2) else cpp_kernels.cic_grid_3d
     elif kernel == 'cubic':
-        cpp_kernel = cpp_kernels.cubic_grid_3d
+        cpp_kernel = cpp_kernels.cubic_grid_2d if (box.ndim == 2) else cpp_kernels.cubic_grid_3d
     else:
-        raise RuntimeError(f'kszx.grid_points(): {kernel=} is not supported')        
-        
+        raise RuntimeError(f'kszx.grid_points(): {kernel=} is not supported')
+
+    lpos_args = tuple(box.lpos)
     grid = np.zeros(box.real_space_shape, dtype=float)
     weights = _check_weights(box, points, weights)  # also checks 'points' arg
-    cpp_kernel(grid, points, weights, wscal, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, periodic)
+    cpp_kernel(grid, points, weights, wscal, *lpos_args, box.pixsize, periodic)
 
     if rpoints is not None:
         rweights = _check_weights(box, rpoints, rweights, prefix='r')  # also checks 'rpoints' arg
         weight_sum = len(points) * np.mean(weights) * wscal            # works if 'weights' is 0-d or 1-d
         rweight_sum = len(rpoints) * np.mean(rweights)                 # works if 'rweights' is 0-d or 1-d
-        
+
         assert rweight_sum > 0
         rwscal = -weight_sum / rweight_sum
-        cpp_kernel(grid, rpoints, rweights, rwscal, box.lpos[0], box.lpos[1], box.lpos[2], box.pixsize, periodic)
+        cpp_kernel(grid, rpoints, rweights, rwscal, *lpos_args, box.pixsize, periodic)
 
     if fft:
         grid = fft_r2c(box, grid, spin=spin)

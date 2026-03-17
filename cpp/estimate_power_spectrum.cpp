@@ -468,7 +468,7 @@ py::tuple estimate_power_spectrum(py::list map_list, py::array_t<const double> &
 
     long M2 = ((nmaps) * (nmaps+1)) / 2;
     vector<double> tmp_pk(nkbins * M2);
-    py::array_t<long> ret_bcounts({nkbins});
+    py::array_t<long> ret_bcounts(nkbins);
     vector<const cplx *> mtmp(nmaps, 0);
     vector<cplx> ztmp(nmaps, {0,0});
 

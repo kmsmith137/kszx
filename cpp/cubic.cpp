@@ -77,7 +77,7 @@ py::array_t<double> cubic_interpolate_3d(py::array_t<const double> &grid, py::ar
     if ((args.gn0 < 4) || (args.gn1 < 4) || (args.gn2 < 4))
         throw runtime_error("kszx.interpolate_points('cubic'): all grid dimensions must be >= 4");
     
-    py::array_t<double> ret({args.npoints});
+    py::array_t<double> ret(args.npoints);
     double *rdata = ret.mutable_data();
 
 #pragma omp parallel for schedule(guided,32)
@@ -129,18 +129,72 @@ inline void cubic_grid_3d(cubic_axis &ax0, cubic_axis &ax1, cubic_axis &ax2, dou
 void cubic_grid_3d(py::array_t<double> &grid, py::array_t<const double> &points, py::array_t<const double> &weights, double wscal, double lpos0, double lpos1, double lpos2, double pixsize, bool periodic)
 {
     interpolation_args<double> args(grid, points, weights, wscal, lpos0, lpos1, lpos2, pixsize);
-    
+
     if ((args.gn0 < 4) || (args.gn1 < 4) || (args.gn2 < 4))
         throw runtime_error("kszx.grid_points('cubic'): all grid dimensions must be >= 4");
 
     for (long i = 0; i < args.npoints; i++) {
         double x, y, z, w;
         args.get_xyzw(i, x, y, z, w);
-    
+
         cubic_axis ax0(x, args.gn0, args.gs0, periodic);
         cubic_axis ax1(y, args.gn1, args.gs1, periodic);
         cubic_axis ax2(z, args.gn2, args.gs2, periodic);
-        
+
         cubic_grid_3d(ax0, ax1, ax2, args.gdata, w);
+    }
+}
+
+
+// -------------------------------------------------------------------------------------------------
+//
+// 2D Cubic interpolation.
+
+
+py::array_t<double> cubic_interpolate_2d(py::array_t<const double> &grid, py::array_t<const double> &points, double lpos0, double lpos1, double pixsize, bool periodic)
+{
+    interpolation_args<const double> args(grid, points, lpos0, lpos1, pixsize);
+
+    if ((args.gn0 < 4) || (args.gn1 < 4))
+        throw runtime_error("kszx.interpolate_points('cubic'): all grid dimensions must be >= 4");
+
+    py::array_t<double> ret(args.npoints);
+    double *rdata = ret.mutable_data();
+
+#pragma omp parallel for schedule(guided,32)
+    for (long i = 0; i < args.npoints; i++) {
+        double x, y;
+        args.get_xy(i, x, y);
+
+        cubic_axis ax0(x, args.gn0, args.gs0, periodic);
+        cubic_axis ax1(y, args.gn1, args.gs1, periodic);
+
+        rdata[i] = cubic_interp_2d(ax0, ax1, args.gdata);
+    }
+
+    return ret;
+}
+
+
+// -------------------------------------------------------------------------------------------------
+//
+// 2D Cubic gridding.
+
+
+void cubic_grid_2d(py::array_t<double> &grid, py::array_t<const double> &points, py::array_t<const double> &weights, double wscal, double lpos0, double lpos1, double pixsize, bool periodic)
+{
+    interpolation_args<double> args(grid, points, weights, wscal, lpos0, lpos1, pixsize);
+
+    if ((args.gn0 < 4) || (args.gn1 < 4))
+        throw runtime_error("kszx.grid_points('cubic'): all grid dimensions must be >= 4");
+
+    for (long i = 0; i < args.npoints; i++) {
+        double x, y, w;
+        args.get_xyw(i, x, y, w);
+
+        cubic_axis ax0(x, args.gn0, args.gs0, periodic);
+        cubic_axis ax1(y, args.gn1, args.gs1, periodic);
+
+        cubic_grid_2d(ax0, ax1, args.gdata, w);
     }
 }

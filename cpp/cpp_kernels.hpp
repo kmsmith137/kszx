@@ -20,18 +20,31 @@ namespace py = pybind11;
 // These functions are exported to python (see cpp_kernels.cpp for pybind11 boilerplate).
 
 
+// 3D interpolation/gridding
 extern py::array_t<double> cic_interpolate_3d(py::array_t<const double> &grid, py::array_t<const double> &points,
 					      double lpos0, double lpos1, double lpos2, double pixsize, bool periodic);
 
 extern py::array_t<double> cubic_interpolate_3d(py::array_t<const double> &grid, py::array_t<const double> &points,
 						double lpos0, double lpos1, double lpos2, double pixsize, bool periodic);
 
-
 extern void cic_grid_3d(py::array_t<double> &grid, py::array_t<const double> &points, py::array_t<const double> &weights,
 			double wscal, double lpos0, double lpos1, double lpos2, double pixsize, bool periodic);
 
 extern void cubic_grid_3d(py::array_t<double> &grid, py::array_t<const double> &points, py::array_t<const double> &weights,
 			  double wscal, double lpos0, double lpos1, double lpos2, double pixsize, bool periodic);
+
+// 2D interpolation/gridding
+extern py::array_t<double> cic_interpolate_2d(py::array_t<const double> &grid, py::array_t<const double> &points,
+					      double lpos0, double lpos1, double pixsize, bool periodic);
+
+extern py::array_t<double> cubic_interpolate_2d(py::array_t<const double> &grid, py::array_t<const double> &points,
+						double lpos0, double lpos1, double pixsize, bool periodic);
+
+extern void cic_grid_2d(py::array_t<double> &grid, py::array_t<const double> &points, py::array_t<const double> &weights,
+			double wscal, double lpos0, double lpos1, double pixsize, bool periodic);
+
+extern void cubic_grid_2d(py::array_t<double> &grid, py::array_t<const double> &points, py::array_t<const double> &weights,
+			  double wscal, double lpos0, double lpos1, double pixsize, bool periodic);
 
 
 extern py::tuple estimate_power_spectrum(py::list map_list, py::array_t<const double> &k_delim,

@@ -75,20 +75,19 @@ def test_interpolation():
     print('test_interpolation(): start')
 
     for _ in range(100):
-        # Currently, interpolate_points() supports CIC and cubic.
+        # interpolate_points() supports CIC and cubic.
         kernel, degree = ('cic',1) if (np.random.uniform() < 0.5) else ('cubic',3)
         periodic = (np.random.uniform() < 0.5)
-        
-        # Currently, interpolate_points() only supports ndim=3.
-        box = helpers.random_box(ndim=3, nmin=degree+1)
-        ndim = box.ndim  # placeholder for future expansion
-        
+        ndim = np.random.choice([2,3])
+
+        box = helpers.random_box(ndim=ndim, nmin=degree+1)
+
         ishift = np.random.randint(-1000,1000,size=ndim) if periodic else np.zeros(ndim,dtype=int)
         poly_lpos = box.lpos + ishift * box.pixsize
         poly_rpos = box.rpos + ishift * box.pixsize
-        
+
         poly = RandomPoly(degree=degree, lpos=poly_lpos, rpos=poly_rpos)
-        
+
         npoints = np.random.randint(100, 200)
         pad = (degree - 1 + 1.0e-7) * (box.pixsize/2.)
         points = np.random.uniform(poly_lpos + pad, poly_rpos - pad, size=(npoints,ndim))
@@ -100,21 +99,20 @@ def test_interpolation():
         epsilon = helpers.compare_arrays(exact_vals, interpolated_vals)
         # print(f'{epsilon=}')
         assert epsilon < 1.0e-12
-        
+
     print('test_interpolation(): pass')
 
 
 def test_interpolation_gridding_consistency():
     print('test_interpolation_gridding_consistency(): start')
-    
+
     for _ in range(100):
-        # Currently, interpolate_points() supports CIC and cubic.
+        # interpolate_points() supports CIC and cubic.
         kernel, degree = ('cic',1) if (np.random.uniform() < 0.5) else ('cubic',3)
         periodic = (np.random.uniform() < 0.5)
-        
-        # Currently, interpolate_points() only supports ndim=3.
-        box = helpers.random_box(ndim=3, nmin=degree+1)
-        ndim = box.ndim  # placeholder for future expansion
+        ndim = np.random.choice([2,3])
+
+        box = helpers.random_box(ndim=ndim, nmin=degree+1)
 
         npoints = np.random.randint(100, 200)
         pad = (-1000 * box.pixsize) if periodic else ((degree - 1 + 1.0e-7) * (box.pixsize/2.))
@@ -130,7 +128,7 @@ def test_interpolation_gridding_consistency():
         else:
             w = np.random.uniform(1.0, 2.0)
             w1 = np.full(npoints, w)
-        
+
         Ag = wscal * core.interpolate_points(box, g, points, kernel=kernel, periodic=periodic)
         Aw = core.grid_points(box, points, weights=w, kernel=kernel, periodic=periodic, wscal=wscal)
 
@@ -142,7 +140,7 @@ def test_interpolation_gridding_consistency():
 
         epsilon = np.abs(dot1-dot2) / den**(0.5)
         assert epsilon < 1.0e-12
-        
+
     print('test_interpolation_gridding_consistency(): pass')
 
 

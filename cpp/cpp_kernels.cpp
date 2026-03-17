@@ -28,6 +28,26 @@ PYBIND11_MODULE(cpp_kernels, m)
           py::arg("grid"), py::arg("points"), py::arg("weights"),
           py::arg("wscal"), py::arg("lpos0"), py::arg("lpos1"),
           py::arg("lpos2"), py::arg("pixsize"), py::arg("periodic"));
+
+    m.def("cic_interpolate_2d", cic_interpolate_2d,
+          py::arg("grid"), py::arg("points"),
+          py::arg("lpos0"), py::arg("lpos1"),
+          py::arg("pixsize"), py::arg("periodic"));
+
+    m.def("cubic_interpolate_2d", cubic_interpolate_2d,
+          py::arg("grid"), py::arg("points"),
+          py::arg("lpos0"), py::arg("lpos1"),
+          py::arg("pixsize"), py::arg("periodic"));
+
+    m.def("cic_grid_2d", cic_grid_2d,
+          py::arg("grid"), py::arg("points"), py::arg("weights"),
+          py::arg("wscal"), py::arg("lpos0"), py::arg("lpos1"),
+          py::arg("pixsize"), py::arg("periodic"));
+
+    m.def("cubic_grid_2d", cubic_grid_2d,
+          py::arg("grid"), py::arg("points"), py::arg("weights"),
+          py::arg("wscal"), py::arg("lpos0"), py::arg("lpos1"),
+          py::arg("pixsize"), py::arg("periodic"));
     
     m.def("estimate_power_spectrum", estimate_power_spectrum,
           py::arg("map_list"), py::arg("k_delim"),

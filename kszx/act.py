@@ -12,8 +12,20 @@ import os
 import zipfile
 import numpy as np
 import pixell.enmap
+import astropy.wcs
 
 from . import io_utils
+
+
+# (default_shape, default_wcs): this (shape, wcs) is used for most ACT maps.
+# It's convenient to have it available as a global variable, rather than needing to read ACT maps to get it.
+
+default_shape = (10320, 43200)
+default_wcs = astropy.wcs.WCS(naxis=2)
+default_wcs.wcs.ctype = ['RA---CAR', 'DEC--CAR']
+default_wcs.wcs.cdelt = [-0.008333, 0.008333]
+default_wcs.wcs.crval = [0.0, 0.0]
+default_wcs.wcs.crpix = [21601.0, 7560.5]
 
 
 def read_cmb(freq, dr, *, night=False, download=False):

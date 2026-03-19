@@ -65,3 +65,8 @@ fi
 #     fi
 # }
 # PS1='$(_env_prompt)\u@\h \W \$ '
+
+# Step 6 (optional, only needed if running Jupyter notebooks):
+# Register the venv as a Jupyter kernel, so that notebooks use the right environment.
+# pip install ipykernel   # if not already installed
+# python -m ipykernel install --user --name kszx --display-name "kszx"

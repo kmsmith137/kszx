@@ -13,7 +13,12 @@
     remember in the future, add comments to the code (or edit documentation / docstrings) as appropriate.
 
   - Only do 'git commit' if the most recent prompt specifically asks for it.
-  
+
+  - If I ask you to edit an .ipynb notebook, and the prompt does not contain "I've saved", then
+    please ask whether the file on disk is up-to-date. (This is to avoid a situation where I ask
+    you to edit a notebook with my unsaved edits in memory. I'll usually remember to save the
+    notebook to disk before prompting you to edit it, but sometimes I'll forget.)
+    
   - Environment setup: every Bash command must run inside both the `kszx` conda env
     and the project venv. The simplest way is to prefix commands with:
         conda activate kszx && source .venv/bin/activate &&

@@ -68,6 +68,10 @@ def main():
     print(f"  cd {worktree_path}")
     print(f"  source .venv/bin/activate  # automatic if using direnv")
     print(f"  pip install --no-build-isolation -v -e .")
+    print()
+    print("Optional (only needed if running Jupyter notebooks):")
+    print("  pip install ipykernel   # if not already installed")
+    print(f"  python -m ipykernel install --user --name {branch_name} --display-name \"{branch_name}\"")
 
 
 if __name__ == '__main__':

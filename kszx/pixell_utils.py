@@ -64,15 +64,34 @@ def plot_map(m, downgrade, nolabels=True, filename=None, title=None, **kwds):
 
     bunch = pixell.enplot.plot(m, downgrade=downgrade, nolabels=nolabels, **kwds)
 
-    if filename is None:
-        if title is not None:
-            print(title)
-        pixell.enplot.show(bunch)
+    if title is None:
+        # No title: use pixell's native show/write
+        if filename is None:
+            pixell.enplot.show(bunch)
+        else:
+            print(f'Writing {filename}\n', end='')
+            assert filename.endswith('.png')
+            io_utils.mkdir_containing(filename)
+            pixell.enplot.write(filename[:-4], bunch)
     else:
-        print(f'Writing {filename}\n', end='')
-        assert filename.endswith('.png')
-        io_utils.mkdir_containing(filename)
-        pixell.enplot.write(filename[:-4], bunch)
+        # Title requested: use matplotlib to render the image with a proper title
+        import matplotlib.pyplot as plt
+        img = bunch.img if hasattr(bunch, 'img') else bunch[0].img
+        aspect = img.height / img.width
+        figwidth = 14
+        fig, ax = plt.subplots(figsize=(figwidth, figwidth * aspect + 0.5))
+        ax.imshow(img)
+        ax.axis('off')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=10)
+        fig.tight_layout(pad=0.5)
+        if filename is None:
+            plt.show()
+        else:
+            print(f'Writing {filename}\n', end='')
+            assert filename.endswith('.png')
+            io_utils.mkdir_containing(filename)
+            fig.savefig(filename, dpi=80, bbox_inches='tight')
+            plt.close(fig)
 
 
 ####################################################################################################

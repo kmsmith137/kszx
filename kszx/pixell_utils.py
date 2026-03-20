@@ -42,7 +42,7 @@ def write_map(filename, m):
     pixell.enmap.write_map(filename, m)
 
 
-def plot_map(m, downgrade, nolabels=True, filename=None, **kwds):
+def plot_map(m, downgrade, nolabels=True, filename=None, title=None, **kwds):
     """Plots pixell map 'm'.
 
     Thin wrapper around ``pixell.enplot()``, just adding a few tweaks:
@@ -55,14 +55,18 @@ def plot_map(m, downgrade, nolabels=True, filename=None, **kwds):
 
        - Add 'filename' argument to select between show/write.
 
+       - Add 'title' argument to display a title above the plot.
+
     For more kwds, see:
       https://pixell.readthedocs.io/en/latest/reference.html#pixell.enplot.plot"""
-    
+
     assert isinstance(m, pixell.enmap.ndmap)
 
     bunch = pixell.enplot.plot(m, downgrade=downgrade, nolabels=nolabels, **kwds)
 
     if filename is None:
+        if title is not None:
+            print(title)
         pixell.enplot.show(bunch)
     else:
         print(f'Writing {filename}\n', end='')

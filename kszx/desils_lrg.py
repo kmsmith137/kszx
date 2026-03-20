@@ -115,12 +115,12 @@ def read_randoms(ix_list, download=False):
     return Catalog.concatenate(catalog_list, name='DESILS-LRG randoms', destructive=True)
 
 
-def compute_imaging_weights(gcat, extended, ebv=True, download=False):
-    r"""Adds a 'weights' column to the Catalog (usually called just after read_galaxies()).
+def compute_imaging_weights(gcat, extended, ebv=True, download=False, col_name='weight'):
+    r"""Adds an imaging weights column to the Catalog (usually called just after read_galaxies()).
 
     Note that this function can be called on the output of :func:`~kszx.desils_lrg.read_galaxies`,
     but not the output of :func:`~kszx.desils_lrg.read_randoms`.
-    
+
     Function arguments:
 
       - ``gcat``: a :class:`~kszx.Catalog` object, obtained by calling
@@ -129,17 +129,21 @@ def compute_imaging_weights(gcat, extended, ebv=True, download=False):
       - ``extended`` (boolean): Slightly different imaging weights should be used for the
         "main" and "extended" DESILS-LRG samples, and this argument selects between them.
         (Note that ``extended`` is also an argument to :func:`~kszx.desils_lrg.read_galaxies`.)
-    
+
       - ``ebv`` (boolean): The DESILS-LRG data products define two sets of imaging weights,
         which do or do not use the E(B-V) column. This argument selects between them.
 
       - ``download`` (boolean): if True, then all needed data files will be auto-downloaded.
-    
+
+      - ``col_name`` (string): name of the column to add to the Catalog. Defaults to ``'weight'``.
+        Useful if you want to keep the imaging weights in a separate column from other weights
+        (e.g. ``col_name='imaging_weight'``).
+
     Reference:
-    
+
       https://data.desi.lbl.gov/public/papers/c3/lrg_xcorr_2023/v1/catalogs/compute_imaging_weights.py
 
-    Note: in addition to the ``weights`` column, this function also adds ``galdepth_gmag_ebv``,
+    Note: in addition to the imaging weights column, this function also adds ``galdepth_gmag_ebv``,
     ``galdepth_rmag_ebv``, and ``galdepth_zmag_ebv`` columns to the Catalog (following the python
     script referenced above.)
     """
@@ -190,7 +194,7 @@ def compute_imaging_weights(gcat, extended, ebv=True, download=False):
 
             weight[mask_bin] = 1.0 / wt    # 1/predicted_density as weights for objects
 
-    gcat.add_column('weight', weight)
+    gcat.add_column(col_name, weight)
 
 
 def apply_quality_cuts(catalog, min_nobs=2, max_ebv=0.15, max_stardens=2500, lrg_mask=True, maskbits=True, island_mask=True, mask_negative_zerr=True, download=True):

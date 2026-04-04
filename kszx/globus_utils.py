@@ -284,10 +284,10 @@ def _wait_for_task(tc, task_id, poll_interval=2.0, timeout=3600, fault_threshold
             print(f'Globus transfer complete.')
             return
         if status == 'FAILED':
+            nice = task.get('nice_status', 'unknown')
+            nice_desc = task.get('nice_status_short_description', 'unknown')
             raise RuntimeError(
-                f'Globus transfer failed (task_id={task_id}).\n'
-                f'Nice error message: {task.get("nice_status_short_description", "unknown")}\n'
-                f'Check details at: https://app.globus.org/activity/{task_id}\n'
+                _task_error_message(nice, nice_desc, task_id)
             )
         # Detect persistent faults (e.g. FILE_NOT_FOUND) that stay ACTIVE
         if not task.get('is_ok', True):
@@ -300,9 +300,7 @@ def _wait_for_task(tc, task_id, poll_interval=2.0, timeout=3600, fault_threshold
                 except Exception:
                     pass
                 raise RuntimeError(
-                    f'Globus transfer error: {nice} ({nice_desc})\n'
-                    f'task_id={task_id}\n'
-                    f'Check details at: https://app.globus.org/activity/{task_id}\n'
+                    _task_error_message(nice, nice_desc, task_id)
                 )
         else:
             consecutive_not_ok = 0
@@ -313,6 +311,42 @@ def _wait_for_task(tc, task_id, poll_interval=2.0, timeout=3600, fault_threshold
                 f'Globus transfer timed out after {timeout}s (task_id={task_id}).\n'
                 f'The transfer may still be running. Check: https://app.globus.org/activity/{task_id}\n'
             )
+
+
+def _task_error_message(nice_status, nice_desc, task_id):
+    """Return a user-friendly error message for Globus transfer task failures."""
+    base = (
+        f'Globus transfer error: {nice_status} ({nice_desc})\n'
+        f'task_id={task_id}\n'
+        f'Check details at: https://app.globus.org/activity/{task_id}\n'
+    )
+    if 'NOT_CONNECTED' in (nice_status or '') or 'offline' in (nice_desc or ''):
+        return (
+            base + '\n'
+            'This means Globus Connect Personal is not running on your machine.\n'
+            '\n'
+            'To start it:\n'
+            '  macOS: Open "Globus Connect Personal" from Applications.\n'
+            '  Linux: ./globusconnectpersonal -start &\n'
+            '\n'
+            'If you haven\'t installed it yet, see:\n'
+            '  https://docs.globus.org/how-to/globus-connect-personal-mac/\n'
+        )
+    if 'NOT_FOUND' in (nice_status or ''):
+        return (
+            base + '\n'
+            'A requested file or directory was not found on the remote endpoint.\n'
+            'This may indicate that the dataset path has changed on the Quijote servers.\n'
+            'Please open an issue at https://github.com/kmsmith137/kszx/issues\n'
+        )
+    if 'PERMISSION' in (nice_status or ''):
+        return (
+            base + '\n'
+            'Permission denied. Check that Globus Connect Personal is configured\n'
+            'to allow writes to your download directory. You can check this in the\n'
+            'GCP preferences under "Access" (or ~/.globusonline/lta/config-paths).\n'
+        )
+    return base
 
 
 def _auth_error_message(e):

@@ -192,6 +192,8 @@ def globus_download(source_endpoint, remote_path, local_abspath,
 
     try:
         result = tc.submit_transfer(tdata)
+    except globus_sdk.AuthAPIError as e:
+        raise RuntimeError(_auth_error_message(e)) from e
     except globus_sdk.TransferAPIError as e:
         if 'EndpointError' in str(e):
             raise RuntimeError(
@@ -242,7 +244,23 @@ def globus_download_batch(source_endpoint, items, label=None):
         gcp_path = _to_gcp_path(local_abspath)
         tdata.add_item(remote_path, gcp_path, recursive=recursive)
 
-    result = tc.submit_transfer(tdata)
+    try:
+        result = tc.submit_transfer(tdata)
+    except globus_sdk.AuthAPIError as e:
+        raise RuntimeError(_auth_error_message(e)) from e
+    except globus_sdk.TransferAPIError as e:
+        if 'EndpointError' in str(e):
+            raise RuntimeError(
+                'Globus transfer failed — is Globus Connect Personal running?\n'
+                '\n'
+                'To start it:\n'
+                '  macOS: Open "Globus Connect Personal" from Applications.\n'
+                '  Linux: ./globusconnectpersonal -start &\n'
+                '\n'
+                'If you haven\'t installed it yet, see:\n'
+                '  https://docs.globus.org/how-to/globus-connect-personal-mac/\n'
+            ) from e
+        raise
     task_id = result['task_id']
     print(f'Globus transfer submitted ({len(items)} items, task_id={task_id}), '
           f'waiting for completion...')
@@ -295,6 +313,38 @@ def _wait_for_task(tc, task_id, poll_interval=2.0, timeout=3600, fault_threshold
                 f'Globus transfer timed out after {timeout}s (task_id={task_id}).\n'
                 f'The transfer may still be running. Check: https://app.globus.org/activity/{task_id}\n'
             )
+
+
+def _auth_error_message(e):
+    """Return a user-friendly error message for Globus authentication failures."""
+    body = str(e)
+    if 'invalid_client' in body:
+        return (
+            'Globus authentication failed: stored credentials are invalid.\n'
+            'This usually means your Globus CLI login has expired or the CLI was updated.\n'
+            '\n'
+            'To fix, run:\n'
+            '  globus login --force\n'
+            '\n'
+            'Then retry your download.\n'
+        )
+    if 'invalid_grant' in body:
+        return (
+            'Globus authentication failed: refresh token is expired or revoked.\n'
+            '\n'
+            'To fix, run:\n'
+            '  globus login --force\n'
+            '\n'
+            'Then retry your download.\n'
+        )
+    return (
+        f'Globus authentication failed: {e}\n'
+        '\n'
+        'To fix, try running:\n'
+        '  globus login --force\n'
+        '\n'
+        'Then retry your download.\n'
+    )
 
 
 def _to_gcp_path(local_abspath):

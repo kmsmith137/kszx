@@ -483,7 +483,7 @@ class Cosmology:
 
     def K(self, *, z):
         """Returns the kSZ radial weight K(z) = -T_CMB sigma_T n_{e0} x_e(z) e^{-tau(z)} (1+z)^2 in units (uK/Mpc).
-        
+
         For now, we approximate x_e=1 and tau=0. Then K(z) is just proportional to (1+z)^2. I'll improve this later!
         Note that K(z) is negative.
         """
@@ -494,6 +494,150 @@ class Cosmology:
         # u = pint.UnitRegistry()
         # print(float(u.thomson_cross_section / u("Mpc^2")))
         sigmaT = 6.986845e-74
-        
+
         return -tcmb * sigmaT * self.ne0 * (1+z)**2
-        
+
+
+    ####################################################################################################
+    # NFW halo profile
+
+
+    def delta_vir(self, *, z):
+        r"""Virial overdensity $\Delta_{\rm vir}(z)$ relative to critical density.
+
+        Uses the Bryan & Norman (1998) fitting formula for flat ΛCDM:
+
+        $$\Delta_{\rm vir}(z) = 18\pi^2 + 82 x - 39 x^2, \quad x \equiv \Omega_m(z) - 1.$$
+
+        Limits to $18\pi^2 \approx 178$ at high z (EdS regime). At z=0 with
+        $\Omega_m \approx 0.3$, gives $\Delta_{\rm vir} \approx 100\,\rho_{\rm crit}$.
+
+        Assumes flat ΛCDM.
+        """
+        z = np.asarray(z)
+        # Flat ΛCDM:  Omega_m(z) = Omega_m0 (1+z)^3 / (H(z)/H0)^2  (inlined here).
+        omm0 = (self.params.ombh2 + self.params.omch2) / self.h**2
+        Omz = omm0 * (1.0 + z)**3 * (self.H(z=0) / self.H(z=z))**2
+        x = Omz - 1.0
+        return 18.0 * np.pi**2 + 82.0 * x - 39.0 * x**2
+
+
+    def concentration(self, *, z, M):
+        r"""NFW halo concentration $c(M, z)$ from Duffy et al. 2008.
+
+        Uses their Table 1 full-sample, virial-mass fit -- matched to the Bryan & Norman 1998
+        $\Delta_{\rm vir}$ used by :meth:`delta_vir`:
+
+        $$c(M, z) = 7.85 \, \left(\frac{M}{2 \times 10^{12}\, h^{-1} M_\odot}\right)^{-0.081}
+                    (1+z)^{-0.71}$$
+
+        Regime of validity: $M \in [10^{11}, 10^{15}]\, h^{-1} M_\odot$, $z \in [0, 2]$.
+        (Not enforced here -- caller is responsible.)
+
+        Args:
+          z: redshift (scalar or array).
+          M: halo virial mass in $M_\odot$ (physical units, NOT $h^{-1} M_\odot$). Broadcasts with z.
+        """
+        z, M = np.asarray(z), np.asarray(M)
+        # Duffy+08 expresses M in h^{-1} M_sun. Convert from physical M_sun: M_h = M * h.
+        M_h = M * self.h
+        return 7.85 * (M_h / 2.0e12)**(-0.081) * (1.0 + z)**(-0.71)
+
+
+    def r_vir(self, *, z, M):
+        r"""Virial radius $r_{\rm vir}(z, M)$ in Mpc.
+
+        Defined implicitly by
+        $$M = \frac{4\pi}{3} \Delta_{\rm vir}(z) \rho_{\rm crit}(z) r_{\rm vir}^3$$
+        with $\Delta_{\rm vir}(z)$ from Bryan & Norman 1998 (see :meth:`delta_vir`).
+
+        Args:
+          z: redshift.
+          M: halo virial mass in $M_\odot$ (physical). Broadcasts with z.
+
+        Returns: $r_{\rm vir}$ in Mpc.
+        """
+        z, M = np.asarray(z), np.asarray(M)
+
+        # rho_crit(z) = (3 / 8 pi G) H(z)^2 (inlined here).
+        # Uses the same rho_crit_over_h2 constant used in __init__, and the H(z)/H(0) ratio
+        # so we don't have to juggle G in these units.
+        rho_crit_over_h2 = 2.7754e11   # M_sun / Mpc^3
+        rho_crit_z = rho_crit_over_h2 * self.h**2 * (self.H(z=z) / self.H(z=0))**2
+
+        delta = self.delta_vir(z=z)
+        return (3.0 * M / (4.0 * np.pi * delta * rho_crit_z))**(1.0 / 3.0)
+
+
+    def u_nfw(self, *, k, z, M, c=None):
+        r"""NFW halo profile in Fourier space, truncated at $r_{\rm vir}$.
+
+        Normalized so that $u(k=0, z, M, c) = 1$.
+
+        The real-space profile is
+        $$\rho(r) = \frac{\rho_s}{(r/r_s) (1 + r/r_s)^2} \quad \text{for } r \le r_{\rm vir}$$
+        (and zero outside). With $\mu = k r_s$ and $g(c) = \ln(1+c) - c/(1+c)$, the
+        spherically-symmetric Fourier transform is (Scoccimarro+01, Cooray & Sheth 2002):
+
+        $$
+        u(k) = \frac{1}{g(c)} \left[
+            \sin\mu \, \big(\mathrm{Si}((1{+}c)\mu) - \mathrm{Si}(\mu)\big)
+            - \frac{\sin(c\mu)}{(1{+}c)\mu}
+            + \cos\mu \, \big(\mathrm{Ci}((1{+}c)\mu) - \mathrm{Ci}(\mu)\big)
+        \right]
+        $$
+
+        where Si, Ci are the sine- and cosine-integrals.
+
+        Args:
+          k: wavenumber in Mpc^{-1} (scalar or array).
+          z: redshift.
+          M: halo virial mass in $M_\odot$ (physical units).
+          c: concentration (optional). If None, uses :meth:`concentration` (Duffy+08).
+
+        All of (k, z, M, c) are broadcast against each other.
+
+        Caveats:
+          - Flat ΛCDM (enters inlined $\Omega_m(z)$ in :meth:`delta_vir` and inlined
+            $\rho_{\rm crit}(z)$ in :meth:`r_vir`).
+          - Virial radius uses Bryan & Norman 1998 $\Delta_{\rm vir}$, not $\Delta=200c$
+            or $\Delta=200m$.
+          - ``M`` is interpreted as $M_{\rm vir}$ (mass inside $r_{\rm vir}$). FoF mass is
+            not generally equal to $M_{\rm vir}$; any mass-definition conversion is the
+            caller's responsibility.
+          - Sharp truncation at $r_{\rm vir}$ (no outer-profile smoothing).
+        """
+        import scipy.special
+
+        k, z, M = np.asarray(k), np.asarray(z), np.asarray(M)
+        c = self.concentration(z=z, M=M) if c is None else np.asarray(c)
+
+        # Broadcast all inputs to a common shape.
+        k, z, M, c = np.broadcast_arrays(k, z, M, c)
+
+        # Scale radius r_s = r_vir / c. (We only need r_s below -- not r_vir separately.)
+        r_s = self.r_vir(z=z, M=M) / c
+
+        # mu = k * r_s.  Regulate away from 0 so sici, sin/mu, and Ci-differences are all
+        # finite (Ci blows up logarithmically at 0); we'll restore u(k=0) = 1 at the end.
+        mu = k * r_s
+        mu_safe = np.where(mu > 0, mu, 1.0)
+
+        Si_mu,    Ci_mu    = scipy.special.sici(mu_safe)
+        Si_1cmu,  Ci_1cmu  = scipy.special.sici((1.0 + c) * mu_safe)
+
+        # Analytic FT of truncated NFW (Scoccimarro+01, Cooray & Sheth 2002).
+        # Two of these three pieces have finite mu->0 limits that look singular at face value:
+        #   sin(c*mu) / ((1+c)*mu)     -> c/(1+c)     (0/0 in naive float eval)
+        #   Ci((1+c)mu) - Ci(mu)       -> ln(1+c)     (inf - inf in naive float eval)
+        # The mu_safe regulation is what makes these safe in floating-point.
+        f = (np.sin(mu_safe) * (Si_1cmu - Si_mu)
+             - np.sin(c * mu_safe) / ((1.0 + c) * mu_safe)
+             + np.cos(mu_safe) * (Ci_1cmu - Ci_mu))
+
+        # g(c) = ln(1+c) - c/(1+c); equals M_vir / (4 pi rho_s r_s^3).
+        g = np.log1p(c) - c / (1.0 + c)
+
+        u = f / g
+        return np.where(mu > 0, u, 1.0)
+

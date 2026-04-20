@@ -32,12 +32,14 @@ if __name__ == '__main__':
             'By default, downloads halos, pk, and linear_pk (not snapshots).\n'
             'Use -s to also download snapshots.\n\n'
             'Examples:\n'
-            '  python -m kszx download_quijote 100\n'
+            '  python -m kszx download_quijote 100           # realizations 0..99\n'
+            '  python -m kszx download_quijote 100 200       # realizations 100..199\n'
             '  python -m kszx download_quijote 500 -t Om_p -z 0.5\n'
             '  python -m kszx download_quijote 10 -s\n'
         ),
     )
-    p.add_argument('N', type=int, help='number of realizations to download (downloads realizations 0..N-1)')
+    p.add_argument('N', type=int, nargs='+',
+                   help='one int N -> download realizations 0..N-1; two ints N1 N2 -> realizations N1..N2-1')
     p.add_argument('-t', metavar='SIM_TYPE', default='fiducial', help='simulation type (default: fiducial)')
     p.add_argument('-z', metavar='REDSHIFT', type=float, default=0.0, help='redshift (default: 0)')
     p.add_argument('-s', action='store_true', help='also download snapshots')
@@ -76,7 +78,13 @@ if __name__ == '__main__':
         products = ['halos', 'pk', 'linear_pk']
         if args.s:
             products.append('snapshots')
-        quijote.download(args.t, args.N, products=products, redshifts=(args.z,))
+        if len(args.N) == 1:
+            realizations = range(args.N[0])
+        elif len(args.N) == 2:
+            realizations = range(args.N[0], args.N[1])
+        else:
+            parser.error('download_quijote: expected 1 or 2 positional integers (got %d)' % len(args.N))
+        quijote.download(args.t, realizations, products=products, redshifts=(args.z,))
     elif args.command == 'show':
         from . import io_utils
         io_utils.show_file(args.filename)

@@ -148,9 +148,29 @@ def unpack(srcfile, expected_dstfile=None):
     
     elif srcfile.endswith('.tar.gz') or srcfile.endswith('.tgz'):
         print(f'Un-tarring and gunzipping {srcfile}')
-        tar = tarfile.open(srcfile, 'r:gz')
-        tar.extractall(path = os.path.dirname(srcfile))
-        tar.close()
+        try:
+            tar = tarfile.open(srcfile, 'r:gz')
+        except tarfile.ReadError as e:
+            # Some servers serve double-gzipped tarballs (e.g. IRSA's Planck
+            # HFI beam product, HFI_RIMO_BEAMS_R3.01.tar.gz, is actually
+            # gzip(gzip(tar))). GNU/BSD 'tar xzf' autodetects this; Python's
+            # tarfile module does not. Fallback: gunzip once to a temp file
+            # and retry with 'r:*' (auto-detect any remaining compression).
+            print(f"  tarfile.open('r:gz') failed ({e}); retrying with an extra gunzip step")
+            inner_path = srcfile + '.inner'
+            try:
+                with gzip.open(srcfile, 'rb') as f_in:
+                    with open(inner_path, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                tar = tarfile.open(inner_path, 'r:*')
+                tar.extractall(path=os.path.dirname(srcfile))
+                tar.close()
+            finally:
+                if os.path.exists(inner_path):
+                    os.remove(inner_path)
+        else:
+            tar.extractall(path = os.path.dirname(srcfile))
+            tar.close()
     
     elif srcfile.endswith('.gz'):
         dstfile = srcfile[:-3]

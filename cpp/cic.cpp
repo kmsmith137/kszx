@@ -125,6 +125,9 @@ void cic_grid_3d(py::array_t<double> &grid, py::array_t<const double> &points, p
         double x, y, z, w;
         args.get_xyzw(i, x, y, z, w);
 
+        if (w == 0.0)
+            continue;
+
         cic_axis ax0(x, args.gn0, args.gs0, periodic);
         cic_axis ax1(y, args.gn1, args.gs1, periodic);
         cic_axis ax2(z, args.gn2, args.gs2, periodic);
@@ -179,6 +182,9 @@ void cic_grid_2d(py::array_t<double> &grid, py::array_t<const double> &points, p
     for (long i = 0; i < args.npoints; i++) {
         double x, y, w;
         args.get_xyw(i, x, y, w);
+
+        if (w == 0.0)
+            continue;
 
         cic_axis ax0(x, args.gn0, args.gs0, periodic);
         cic_axis ax1(y, args.gn1, args.gs1, periodic);

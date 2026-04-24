@@ -137,6 +137,9 @@ void cubic_grid_3d(py::array_t<double> &grid, py::array_t<const double> &points,
         double x, y, z, w;
         args.get_xyzw(i, x, y, z, w);
 
+        if (w == 0.0)
+            continue;
+
         cubic_axis ax0(x, args.gn0, args.gs0, periodic);
         cubic_axis ax1(y, args.gn1, args.gs1, periodic);
         cubic_axis ax2(z, args.gn2, args.gs2, periodic);
@@ -191,6 +194,9 @@ void cubic_grid_2d(py::array_t<double> &grid, py::array_t<const double> &points,
     for (long i = 0; i < args.npoints; i++) {
         double x, y, w;
         args.get_xyw(i, x, y, w);
+
+        if (w == 0.0)
+            continue;
 
         cubic_axis ax0(x, args.gn0, args.gs0, periodic);
         cubic_axis ax1(y, args.gn1, args.gs1, periodic);

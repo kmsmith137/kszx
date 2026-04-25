@@ -200,6 +200,11 @@ def read_beam(freq, freq2=None, release=4, *, pol='T', lmax=None, download=False
       component-separation pipelines don't reconstruct the monopole, so the
       stored transfer function is deliberately zero at ℓ=0. **Do not divide by
       b[0]** for CMB-solution beams; apply the TF to C_ell directly.
+
+    Note on SEVEM: the SEVEM ``COM_CMB_IQU`` file ships an empty BEAM_TF table
+    (NAXIS2=0, LMAX_I=-1). Per Planck 2018 IV, the SEVEM combined CMB map has
+    a 5' FWHM Gaussian effective beam; this function substitutes that analytic
+    Gaussian (also with b[0]=0) when the table is empty.
     """
     if release not in (3, 4):
         raise RuntimeError(f'Planck release={release} not supported (expected 3 or 4)')
@@ -214,15 +219,32 @@ def read_beam(freq, freq2=None, release=4, *, pol='T', lmax=None, download=False
 
     with fits.open(filename) as h:
         if isinstance(col, tuple):
-            # Named HDU + column: used by the CMB-solution branch (BEAM_TF / INT_BEAM|POL_BEAM)
-            # and by the PR3 LFI branch (BEAMWF_030X030 / BL etc).
-            extname, colname = col
-            b_ell = np.asarray(h[extname].data[colname], dtype=float)
-            if release == 3 and extname.startswith('BEAMWF_'):
+            # Two-element tuple identifying (HDU, column):
+            #   - PR3 LFI uses string EXTNAME (e.g. 'BEAMWF_030X030') + 'BL'.
+            #   - CMB-solution branch uses int HDU index 2 + 'INT_BEAM' / 'POL_BEAM'
+            #     (the COM_CMB_IQU files do not assign an EXTNAME to HDU 2).
+            extname_or_idx, colname = col
+            b_ell = np.asarray(h[extname_or_idx].data[colname], dtype=float)
+            if (release == 3 and isinstance(extname_or_idx, str)
+                    and extname_or_idx.startswith('BEAMWF_')):
                 # PR3 LFI 'BL' values in the RIMO are close to but not exactly 1 at ell=0
                 # due to residual calibration factors; renormalize to match the ACT and HFI
                 # convention b[0] = 1.
                 b_ell = b_ell / b_ell[0]
+            elif is_solution and len(b_ell) == 0:
+                # SEVEM's COM_CMB_IQU file ships an empty BEAM_TF table (NAXIS2=0,
+                # LMAX_I=-1). Per Planck 2018 IV / the PLA wiki, the SEVEM combined
+                # CMB map has a 5' FWHM Gaussian effective beam; substitute that.
+                # Match the b[0]=0 monopole convention used by the other solutions.
+                lmax_full = int(h[extname_or_idx].header.get('LMAX_I', 4096))
+                if lmax_full < 0:
+                    lmax_full = 4096
+                ell_full = np.arange(lmax_full + 1)
+                sigma_rad = (5.0 * np.pi / (180.0 * 60.0)) / np.sqrt(8.0 * np.log(2.0))
+                b_ell = np.exp(-0.5 * ell_full * (ell_full + 1) * sigma_rad**2)
+                b_ell[0] = 0.0
+                print(f'  [{freq}] BEAM_TF table is empty; substituting analytic '
+                      f'5\' FWHM Gaussian (Planck 2018 IV).\n', end='')
         else:
             # HFI (PR3 or PR4): single HDU at index 1 with one or three named columns,
             # already self-normalized to b[0] = 1.
@@ -458,8 +480,9 @@ def _beam_filename(freq, freq2, pol, release, download=False, dlfunc=None):
     if pol not in ('T', 'E', 'B'):
         raise RuntimeError(f'pol={pol!r} is not supported (must be "T", "E", or "B")')
 
-    # CMB-solution beams: HDU 2 (EXTNAME='BEAM_TF') inside the same FITS file
-    # that read_cmb uses. PR3 product; release= is ignored here.
+    # CMB-solution beams: HDU 2 (no EXTNAME, addressed by index) inside the same
+    # FITS file read_cmb uses. PR3 product; release= is ignored here. For SEVEM
+    # the BEAM_TF table is empty; read_beam falls back to an analytic 5' Gaussian.
     if isinstance(freq, str) and freq.lower() in _CMB_SOLUTIONS:
         if freq2 is not None and freq2 != freq:
             raise RuntimeError(f'freq2={freq2!r} is not supported for CMB-solution beams '
@@ -467,7 +490,7 @@ def _beam_filename(freq, freq2, pol, release, download=False, dlfunc=None):
         colname = 'INT_BEAM' if pol == 'T' else 'POL_BEAM'
         relpath = (f'release_3/all-sky-maps/maps/component-maps/cmb/'
                    f'COM_CMB_IQU-{freq.lower()}_2048_R3.00_full.fits')
-        return _irsa_path(relpath, download=download, dlfunc=dlfunc), ('BEAM_TF', colname)
+        return _irsa_path(relpath, download=download, dlfunc=dlfunc), (2, colname)
 
     if release == 4:
         return _pr4_beam_filename(freq, freq2, pol, download=download, dlfunc=dlfunc)

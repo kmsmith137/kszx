@@ -73,7 +73,6 @@ def fft_c2v(box, arr, points, kernel, periodic=False, threads=None):
         t *= 1j * box.get_k_component(axis, zero_nyquist=True)
         core.zero_nyquist_modes(box, t)
 
-        k = box.get_k_component(axis)
         t = core.fft_c2r(box, t, spin=0, threads=threads)
         vcart[axis,:] = core.interpolate_points(box, t, points, kernel)
         del t
@@ -96,11 +95,12 @@ def cartesian_to_spherical(points, vx, vy, vz, epsilon):
     vz = utils.asarray(vz, 'kszx.mlhack.cartesian_to_spherical()', 'vz')
 
     if (points.ndim != 2) or (points.shape[1] != 3):
-        raise RuntimeError(f"kszx.mlhack.fft_c2v(): expected points.shape=(N,{box.ndim}), got shape {points.shape}")
+        raise RuntimeError(f"kszx.mlhack.cartesian_to_spherical(): expected points.shape=(N,3), got shape {points.shape}")
 
     npoints = len(points)
-    if any((t.shape != (npoints,)) for t in (vx,vy,vz)):
-        raise RuntimeError(f"kszx.mlhack.fft_c2v(): expected u.shape=({npoints,}), got shape {t.shape}")
+    for name, arr in (('vx', vx), ('vy', vy), ('vz', vz)):
+        if arr.shape != (npoints,):
+            raise RuntimeError(f"kszx.mlhack.cartesian_to_spherical(): expected {name}.shape=({npoints},), got shape {arr.shape}")
     
     x, y, z = np.transpose(points)
 

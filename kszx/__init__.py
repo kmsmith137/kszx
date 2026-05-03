@@ -53,6 +53,7 @@ from . import desils_main
 from . import planck
 from . import quijote
 from . import sdss
+from . import websky
 
 # Utility modules for specific data formats.
 from . import gadget_utils

@@ -44,6 +44,36 @@ if __name__ == '__main__':
     p.add_argument('-z', metavar='REDSHIFT', type=float, default=0.0, help='redshift (default: 0)')
     p.add_argument('-s', action='store_true', help='also download snapshots')
 
+    p = subparsers.add_parser(
+        'download_websky',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Download Websky v0.4 data products from NERSC (via scp).',
+        epilog=(
+            'By default, downloads NOTHING; pass one or more flags to select products.\n\n'
+            'Examples:\n'
+            '  python -m kszx download_websky --halos\n'
+            '  python -m kszx download_websky --kappa --ksz --ksz-patchy --tsz --cib 100 143 217 353 545 857\n'
+            '  python -m kszx download_websky --list-cib-freqs\n'
+            '  python -m kszx download_websky --all\n'
+        ),
+    )
+    p.add_argument('--halos',      action='store_true', help='download halos.pksc (~32 GB)')
+    p.add_argument('--kappa',      action='store_true', help='download kap.fits (full lensing convergence)')
+    p.add_argument('--ksz',        action='store_true', help='download ksz.fits (late-time kSZ)')
+    p.add_argument('--ksz-patchy', action='store_true', help='download ksz_patchy.fits (reionization kSZ)')
+    p.add_argument('--tsz',        action='store_true', help='download tsz.fits (nside=8192)')
+    p.add_argument('--isw',        action='store_true', help='download isw.fits')
+    p.add_argument('--cmb-alm', choices=['lensed', 'unlensed', 'all'], default=None,
+                   help='download CMB alm files (both seeds)')
+    p.add_argument('--cib', nargs='+', default=None,
+                   help="CIB frequencies in GHz, or 'all' to fetch all 45")
+    p.add_argument('--list-cib-freqs', action='store_true',
+                   help='list available CIB frequencies and exit')
+    p.add_argument('--all', action='store_true',
+                   help='shortcut for every product including the catalog (~32 GB)')
+    p.add_argument('--host', default=None,
+                   help="override WEBSKY_SSH_HOST (default 'perlmutter')")
+
     p = subparsers.add_parser('show')
     p.add_argument('filename')
 
@@ -85,6 +115,35 @@ if __name__ == '__main__':
         else:
             parser.error('download_quijote: expected 1 or 2 positional integers (got %d)' % len(args.N))
         quijote.download(args.t, realizations, products=products, redshifts=(args.z,))
+    elif args.command == 'download_websky':
+        from . import websky
+        if args.list_cib_freqs:
+            for f in websky.CIB_FREQS_GHZ:
+                print(f)
+            sys.exit(0)
+        if args.host:
+            websky.WEBSKY_SSH_HOST = args.host
+        if args.all:
+            args.halos      = True
+            args.kappa      = True
+            args.ksz        = True
+            args.ksz_patchy = True
+            args.tsz        = True
+            args.isw        = True
+            if args.cmb_alm is None: args.cmb_alm = 'all'
+            if args.cib is None:     args.cib = ['all']
+        cib_freqs = ()
+        if args.cib is not None:
+            if args.cib == ['all']:
+                cib_freqs = websky.CIB_FREQS_GHZ
+            else:
+                cib_freqs = tuple(float(f) for f in args.cib)
+        cmb_alm = () if args.cmb_alm is None else (
+            ('lensed', 'unlensed') if args.cmb_alm == 'all' else (args.cmb_alm,))
+        websky.download(halos=args.halos, kappa=args.kappa,
+                        ksz=args.ksz, ksz_patchy=args.ksz_patchy,
+                        tsz=args.tsz, isw=args.isw,
+                        cib=cib_freqs, cmb_alm=cmb_alm)
     elif args.command == 'show':
         from . import io_utils
         io_utils.show_file(args.filename)

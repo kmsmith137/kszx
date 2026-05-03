@@ -545,17 +545,18 @@ class Cosmology:
 
 
     def r_vir(self, *, z, M):
-        r"""Virial radius $r_{\rm vir}(z, M)$ in Mpc.
+        r"""Virial radius $r_{\rm vir}(z, M)$ in **comoving** Mpc.
 
-        Defined implicitly by
-        $$M = \frac{4\pi}{3} \Delta_{\rm vir}(z) \rho_{\rm crit}(z) r_{\rm vir}^3$$
-        with $\Delta_{\rm vir}(z)$ from Bryan & Norman 1998 (see :meth:`delta_vir`).
+        Defined implicitly (in physical units) by
+        $$M = \frac{4\pi}{3} \Delta_{\rm vir}(z) \rho_{\rm crit}(z) r_{\rm vir,phys}^3$$
+        with $\Delta_{\rm vir}(z)$ from Bryan & Norman 1998 (see :meth:`delta_vir`),
+        then converted to comoving Mpc via $r_{\rm vir} = (1+z)\, r_{\rm vir, phys}$.
 
         Args:
           z: redshift.
           M: halo virial mass in $M_\odot$ (physical). Broadcasts with z.
 
-        Returns: $r_{\rm vir}$ in Mpc.
+        Returns: $r_{\rm vir}$ in comoving Mpc.
         """
         z, M = np.asarray(z), np.asarray(M)
 
@@ -566,13 +567,15 @@ class Cosmology:
         rho_crit_z = rho_crit_over_h2 * self.h**2 * (self.H(z=z) / self.H(z=0))**2
 
         delta = self.delta_vir(z=z)
-        return (3.0 * M / (4.0 * np.pi * delta * rho_crit_z))**(1.0 / 3.0)
+        r_vir_phys = (3.0 * M / (4.0 * np.pi * delta * rho_crit_z))**(1.0 / 3.0)
+        return (1.0 + z) * r_vir_phys   # note (1+z), to convert physical -> comoving
 
 
     def u_nfw(self, *, k, z, M, c=None):
         r"""NFW halo profile in Fourier space, truncated at $r_{\rm vir}$.
 
         Normalized so that $u(k=0, z, M, c) = 1$.
+        Note that 'k' is a comoving (not physical) wavenumber in Mpc^{-1}.
 
         The real-space profile is
         $$\rho(r) = \frac{\rho_s}{(r/r_s) (1 + r/r_s)^2} \quad \text{for } r \le r_{\rm vir}$$
@@ -590,7 +593,9 @@ class Cosmology:
         where Si, Ci are the sine- and cosine-integrals.
 
         Args:
-          k: wavenumber in Mpc^{-1} (scalar or array).
+          k: wavenumber in **comoving** Mpc^{-1} (scalar or array). The FT
+             argument $\mu = k\, r_s$ uses the comoving $r_s$ from
+             :meth:`r_vir`, so $u(k)$ is the comoving Fourier transform.
           z: redshift.
           M: halo virial mass in $M_\odot$ (physical units).
           c: concentration (optional). If None, uses :meth:`concentration` (Duffy+08).

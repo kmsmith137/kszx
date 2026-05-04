@@ -244,9 +244,9 @@ def read_halos(mmin=None, zmin=None, zmax=None, download=False):
     Returns a :class:`~kszx.Catalog` with columns:
 
       - ``ra_deg, dec_deg``: sky position in degrees
-      - ``ztrue``: true cosmological redshift (from comoving distance)
-      - ``zobs``: observed redshift including peculiar-velocity RSD,
-        ``1 + zobs = (1 + ztrue)(1 + v_r)`` with v_r dimensionless
+      - ``z``: true cosmological redshift (from comoving distance, no RSD).
+        If you want the observed redshift including peculiar-velocity RSD,
+        compute it from ``vr``: ``1 + zobs = (1 + z)(1 + vr)``.
       - ``vr, vtheta, vphi``: velocity components in spherical-polar coordinates,
         dimensionless (v/c)
       - ``M``: halo mass in M_sun
@@ -259,7 +259,7 @@ def read_halos(mmin=None, zmin=None, zmax=None, download=False):
     mass_prefactor = (4.0 * np.pi / 3.0) * rho_m0
 
     chunk_size = 10_000_000
-    surviving = {k: [] for k in ('ra_deg', 'dec_deg', 'ztrue', 'zobs',
+    surviving = {k: [] for k in ('ra_deg', 'dec_deg', 'z',
                                   'vr', 'vtheta', 'vphi', 'M')}
 
     print(f'Reading {filepath}\n', end='')
@@ -305,19 +305,19 @@ def read_halos(mmin=None, zmin=None, zmax=None, download=False):
             M = M[mask]
 
             chi = np.sqrt(x*x + y*y + z*z)
-            ztrue = cosmo.z(chi=chi)
+            z_true = cosmo.z(chi=chi)
 
-            zmask = np.ones_like(ztrue, dtype=bool)
+            zmask = np.ones_like(z_true, dtype=bool)
             if zmin is not None:
-                zmask &= (ztrue >= zmin)
+                zmask &= (z_true >= zmin)
             if zmax is not None:
-                zmask &= (ztrue <= zmax)
+                zmask &= (z_true <= zmax)
             if not zmask.any():
                 continue
 
             x, y, z = x[zmask], y[zmask], z[zmask]
             vx_kms, vy_kms, vz_kms = vx_kms[zmask], vy_kms[zmask], vz_kms[zmask]
-            M, chi, ztrue = M[zmask], chi[zmask], ztrue[zmask]
+            M, z_true = M[zmask], z_true[zmask]
 
             # Convert to v/c (dimensionless) before computing spherical components.
             vx = vx_kms / _C_KMS
@@ -330,19 +330,17 @@ def read_halos(mmin=None, zmin=None, zmax=None, download=False):
             # epsilon for cartesian_to_spherical guards against r ~ 0;
             # 1 Mpc is plenty smaller than any chi we care about here.
             vr, vtheta, vphi = mlhack.cartesian_to_spherical(vec, vx, vy, vz, epsilon=1.0)
-            zobs = (1.0 + ztrue) * (1.0 + vr) - 1.0
 
             surviving['ra_deg'].append(ra)
             surviving['dec_deg'].append(dec)
-            surviving['ztrue'].append(ztrue)
-            surviving['zobs'].append(zobs)
+            surviving['z'].append(z_true)
             surviving['vr'].append(vr)
             surviving['vtheta'].append(vtheta)
             surviving['vphi'].append(vphi)
             surviving['M'].append(M)
 
     cat = Catalog(name='Websky halos', filename=filepath)
-    for col in ('ra_deg', 'dec_deg', 'ztrue', 'zobs', 'vr', 'vtheta', 'vphi', 'M'):
+    for col in ('ra_deg', 'dec_deg', 'z', 'vr', 'vtheta', 'vphi', 'M'):
         if surviving[col]:
             arr = np.concatenate(surviving[col])
         else:

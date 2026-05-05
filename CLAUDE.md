@@ -19,11 +19,11 @@
     you to edit a notebook with my unsaved edits in memory. I'll usually remember to save the
     notebook to disk before prompting you to edit it, but sometimes I'll forget.)
     
-  - Environment setup: every Bash command must run inside both the `kszx` conda env
-    and the project venv. The simplest way is to prefix commands with:
-        conda activate kszx && source .venv/bin/activate &&
-    For example:
-        conda activate kszx && source .venv/bin/activate && python my_script.py
-    Do NOT use `conda run -n kszx` (it has quoting issues and doesn't activate the venv).  
+  - Environment setup: this directory uses direnv (via a symlink .envrc -> dot_envrc)
+    to activate the `kszx` conda env and the project's `.venv` automatically, so Bash commands
+    inherit both without needing an explicit prefix. (You can verify with `echo $CONDA_DEFAULT_ENV`
+    and `echo $VIRTUAL_ENV`.) If for some reason direnv hasn't fired, the manual
+    equivalent is `conda activate kszx && source .venv/bin/activate && COMMAND`.
+    Don't use `conda run -n kszx` (it has quoting issues and doesn't activate the venv).
 
   - Useful documentation is in `docs/source/*.rst` (in addition to docstrings).

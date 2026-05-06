@@ -15,6 +15,28 @@ if __name__ == '__main__':
 
     p = subparsers.add_parser('download_planck')
 
+    p = subparsers.add_parser(
+        'download_desils_lrg',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Download DESILS-LRG data products (Zhou et al 2023, https://arxiv.org/abs/2309.06443).',
+        epilog=(
+            'By default, downloads NOTHING; pass one or more flags to select products.\n\n'
+            'Examples:\n'
+            '  python -m kszx download_desils_lrg --main\n'
+            '  python -m kszx download_desils_lrg --randoms 20\n'
+            '  python -m kszx download_desils_lrg --main --extended --randoms 10 --imaging-weights --stardens\n'
+            '  python -m kszx download_desils_lrg --all\n'
+        ),
+    )
+    p.add_argument('--main',            action='store_true', help='main galaxy catalog (3 FITS files used by read_galaxies)')
+    p.add_argument('--extended',        action='store_true', help='extended galaxy catalog (3 FITS files used by read_galaxies)')
+    p.add_argument('--randoms', type=int, default=0, metavar='N',
+                   help='download the first N (of 200) random source files (each = 2 FITS files)')
+    p.add_argument('--imaging-weights', action='store_true', help='4 linear-coeffs yaml files (main/extended x ebv/no_ebv)')
+    p.add_argument('--stardens',        action='store_true', help='stellar density map (used by apply_quality_cuts)')
+    p.add_argument('--all',             action='store_true',
+                   help='shortcut for --main --extended --imaging-weights --stardens, plus all 200 randoms if --randoms is unset')
+
     p = subparsers.add_parser('download_sdss')
     p.add_argument('survey', help='Survey name such as CMASS_North')
 
@@ -100,6 +122,22 @@ if __name__ == '__main__':
     elif args.command == 'download_planck':
         from . import planck
         planck.download()
+    elif args.command == 'download_desils_lrg':
+        from . import desils_lrg
+        if args.all:
+            args.main = True
+            args.extended = True
+            args.imaging_weights = True
+            args.stardens = True
+            if args.randoms == 0:
+                args.randoms = 200
+        desils_lrg.download(
+            main = args.main,
+            extended = args.extended,
+            randoms = args.randoms,
+            imaging_weights = args.imaging_weights,
+            stardens = args.stardens,
+        )
     elif args.command == 'download_sdss':
         from . import sdss
         sdss.download(args.survey)

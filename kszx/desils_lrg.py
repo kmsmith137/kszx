@@ -267,7 +267,57 @@ def apply_quality_cuts(catalog, min_nobs=2, max_ebv=0.15, max_stardens=2500, lrg
     if mask_negative_zerr and ('zerr' in catalog.col_names):
         mask = (catalog.zerr >= 0)
         catalog.apply_boolean_mask(mask, name = f'DESILS-LRG quality cut: zerr >= 0')
-    
+
+
+def download(*, main=False, extended=False, randoms=0,
+             imaging_weights=False, stardens=False):
+    r"""Pre-fetch DESILS-LRG data products (Zhou et al 2023).
+
+    All flags default to False / 0; pass keywords to select what to download.
+
+      - ``main`` (bool): main galaxy catalog -- the three FITS files actually
+        read by :func:`~kszx.desils_lrg.read_galaxies` (suffixes ``None``,
+        ``'more_2'``, ``'pz'``).
+      - ``extended`` (bool): same three FITS files for the extended sample.
+      - ``randoms`` (int): download the first ``randoms`` random source files
+        (each provides one ETS FITS and one lrgmask FITS, so 2x files).
+      - ``imaging_weights`` (bool): the four linear-coeffs YAML files
+        (main/extended x ebv/no_ebv) consumed by
+        :func:`~kszx.desils_lrg.compute_imaging_weights`.
+      - ``stardens`` (bool): nside=64 stellar density map used by
+        :func:`~kszx.desils_lrg.apply_quality_cuts`.
+
+    Already-present files are skipped (re-running is safe).
+
+    Can be called from command line: ``python -m kszx download_desils_lrg ...``.
+    """
+
+    dlfunc = 'kszx.desils_lrg.download'
+
+    for ext_flag, do_it in [(False, main), (True, extended)]:
+        if not do_it:
+            continue
+        for suffix in [None, 'more_2', 'pz']:
+            _catalog_filename(extended=ext_flag, suffix=suffix,
+                              download=True, dlfunc=dlfunc)
+
+    assert randoms >= 0
+    if randoms > 200:
+        raise RuntimeError(f'kszx.desils_lrg.download: randoms={randoms} exceeds the 200 available source files')
+    for ix in range(randoms):
+        _random_filename(ix, mflag=False, download=True, dlfunc=dlfunc)
+        _random_filename(ix, mflag=True,  download=True, dlfunc=dlfunc)
+
+    if imaging_weights:
+        for ext_flag in [False, True]:
+            for ebv_flag in [False, True]:
+                _linear_coeffs_filename(extended=ext_flag, ebv=ebv_flag,
+                                        download=True, dlfunc=dlfunc)
+
+    if stardens:
+        _desils_lrg_path('misc/pixweight-dr7.1-0.22.0_stardens_64_ring.fits',
+                         download=True, dlfunc=dlfunc)
+
 
 @functools.cache
 def read_stardens_map(download=False):

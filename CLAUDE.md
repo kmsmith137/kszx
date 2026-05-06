@@ -18,7 +18,9 @@
     please ask whether the file on disk is up-to-date. (This is to avoid a situation where I ask
     you to edit a notebook with my unsaved edits in memory. I'll usually remember to save the
     notebook to disk before prompting you to edit it, but sometimes I'll forget.)
-    
+
+  - New .ipynb notebooks should use the 'kszx' jupyterlab kernel.
+  
   - Environment setup: this directory uses direnv (via a symlink .envrc -> dot_envrc)
     to activate the `kszx` conda env and the project's `.venv` automatically, so Bash commands
     inherit both without needing an explicit prefix. (You can verify with `echo $CONDA_DEFAULT_ENV`

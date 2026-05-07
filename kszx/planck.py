@@ -256,46 +256,74 @@ def read_beam(freq, freq2=None, release=4, *, pol='T', lmax=None, download=False
     return b_ell
 
 
-def download():
-    r"""Downloads every Planck product read by default ``read_*`` calls.
+def download(*, galmask=False, freq_maps=False, component_maps=False, beams=False,
+             release=4, freqs=None, apodizations=None, methods=None):
+    r"""Pre-fetch Planck data products.
 
-    Total size ~18 GB::
+    All product flags default to False; pass keywords to select what to download.
 
-      - PR2 HFI Galactic-plane masks (3 apodizations)     ~384 MB
-      - PR4 NPIPE RIMO beam tarball (all beam products)    224 MB
-      - PR4 NPIPE frequency maps (9 channels)            ~10.5 GB
-      - PR3 CMB component-separation maps (4 methods)      ~7 GB
+      - ``galmask`` (bool): PR2 HFI Galactic-plane masks. Always PR2 (the
+        ``release`` argument doesn't apply); each apodization file is ~128 MB.
+      - ``freq_maps`` (bool): per-channel frequency sky maps. Honors
+        ``release`` and ``freqs``. Sizes: PR4 LFI ~500 MB/channel, HFI
+        100-353 ~2 GB/channel, HFI 545/857 ~500 MB/channel.
+      - ``component_maps`` (bool): CMB component-separation maps
+        (smica/nilc/commander/sevem). Always PR3 (NPIPE has no component-
+        separation release); ~1.7 GB/method. Beams for these ride inside
+        HDU 2 of the same FITS files.
+      - ``beams`` (bool): beam window functions. Honors ``release``.
+        PR4 = single NPIPE RIMO tarball (~224 MB; gives every freq pair).
+        PR3 = HFI RIMO tarball (~87 MB) + LFI RIMO single FITS (~770 KB).
 
-    Intended to prime the kszx cache for offline use. Beams for the four
-    CMB component-separation products live inside HDU 2 of the same files
-    as the maps, so this one pass also caches them.
+      - ``release`` (int): 3 (PR3, IRSA) or 4 (PR4 / NPIPE, NERSC). Default 4.
+        Affects ``freq_maps`` and ``beams``. Ignored for ``galmask`` (always
+        PR2) and ``component_maps`` (always PR3).
+      - ``freqs`` (list of int or None): restrict ``freq_maps`` to a subset of
+        {30, 44, 70, 100, 143, 217, 353, 545, 857}. Default is all nine.
+      - ``apodizations`` (list of int or None): restrict ``galmask`` to a
+        subset of {0, 2, 5} degrees. Default is all three (~384 MB total).
+      - ``methods`` (list of str or None): restrict ``component_maps`` to a
+        subset of {'smica', 'nilc', 'commander', 'sevem'}. Default is all
+        four (~7 GB total).
 
-    PR3 frequency maps and PR3 beams are NOT prefetched (the user will get
-    them on-demand via ``read_*(..., release=3, download=True)`` if needed).
-    Split products (ring-half, detector-set, LFI year) are also deferred.
+    Already-present files are skipped (re-running is safe).
 
-    Can be called from command line: ``python -m kszx download_planck``.
+    Can be called from command line: ``python -m kszx download_planck ...``.
     """
+    if release not in (3, 4):
+        raise RuntimeError(f'Planck release={release} not supported (expected 3 or 4)')
 
-    # PR2 HFI Galactic-plane masks.
-    for apodization in [0, 2, 5]:
-        _hfi_galmask_filename(apodization, download=True)
+    if freqs is None:
+        freqs = list(_LFI_FREQS + _HFI_MAP_FREQS)
+    if apodizations is None:
+        apodizations = [0, 2, 5]
+    if methods is None:
+        methods = list(_CMB_SOLUTIONS)
 
-    # PR4 NPIPE RIMO tarball: a single 224 MB fetch gives every beam file
-    # (81 T + 49 TEB + 49 Wl). One _beam_filename call triggers the tarball
-    # download + unpack.
-    _beam_filename(100, 100, 'T', release=4, download=True)
+    dlfunc = 'kszx.planck.download'
 
-    # PR4 NPIPE frequency maps (all 9 channels).
-    for freq in _LFI_FREQS + _HFI_MAP_FREQS:
-        _cmb_filename(freq, 'T', release=4, download=True,
-                      dlfunc='kszx.planck.download')
+    if galmask:
+        for apod in apodizations:
+            _hfi_galmask_filename(apod, download=True, dlfunc=dlfunc)
 
-    # PR3 CMB component-separation maps (all 4 methods). Beams for these
-    # products live in HDU 2 of the same FITS files.
-    for method in _CMB_SOLUTIONS:
-        _cmb_filename(method, 'T', release=3, download=True,
-                      dlfunc='kszx.planck.download')
+    if freq_maps:
+        for freq in freqs:
+            _cmb_filename(freq, 'T', release=release, download=True, dlfunc=dlfunc)
+
+    if component_maps:
+        for method in methods:
+            # CMB-solution files are PR3 regardless of `release`. Beams ride in HDU 2.
+            _cmb_filename(method, 'T', release=3, download=True, dlfunc=dlfunc)
+
+    if beams:
+        if release == 4:
+            # One NPIPE RIMO tarball download/unpack gives every freq pair, T + TEB.
+            _beam_filename(100, 100, 'T', release=4, download=True, dlfunc=dlfunc)
+        else:
+            # PR3: HFI RIMO tarball (any HFI beam fetch unpacks the whole thing) +
+            # LFI RIMO single FITS file.
+            _beam_filename(100, 100, 'T', release=3, download=True, dlfunc=dlfunc)
+            _beam_filename(30, 30, 'T', release=3, download=True, dlfunc=dlfunc)
 
 
 ####################################################################################################

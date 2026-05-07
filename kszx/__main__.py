@@ -39,7 +39,34 @@ if __name__ == '__main__':
     p.add_argument('survey', help='Survey name such as LRG_NGC')
     p.add_argument('-n', help='number of random files to download (default is to download all 18)')
 
-    p = subparsers.add_parser('download_planck')
+    p = subparsers.add_parser(
+        'download_planck',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Download Planck data products (HFI galmasks, frequency maps, CMB-solution maps, beams).',
+        epilog=(
+            'By default, downloads NOTHING; pass one or more flags to select products.\n\n'
+            'Examples:\n'
+            '  python -m kszx download_planck --galmask\n'
+            '  python -m kszx download_planck --freq-maps --freqs 353 545\n'
+            '  python -m kszx download_planck --component-maps --methods nilc smica\n'
+            '  python -m kszx download_planck --freq-maps --beams --release 3\n'
+            '  python -m kszx download_planck --all\n'
+        ),
+    )
+    p.add_argument('--galmask',         action='store_true', help='PR2 HFI Galactic-plane masks')
+    p.add_argument('--freq-maps',       action='store_true', help='per-channel frequency sky maps (uses --release, --freqs)')
+    p.add_argument('--component-maps',  action='store_true', help='PR3 CMB component-separation maps (uses --methods)')
+    p.add_argument('--beams',           action='store_true', help='beam window functions (uses --release)')
+    p.add_argument('--release', type=int, choices=[3, 4], default=4,
+                   help='Planck release for --freq-maps/--beams (default 4 = PR4 / NPIPE)')
+    p.add_argument('--freqs', type=int, nargs='+', default=None, metavar='FREQ',
+                   help='restrict --freq-maps to a subset of {30,44,70,100,143,217,353,545,857} (default: all 9)')
+    p.add_argument('--apodizations', type=int, nargs='+', default=None, metavar='APOD',
+                   help='restrict --galmask to a subset of {0,2,5} degrees (default: all 3)')
+    p.add_argument('--methods', nargs='+', default=None, metavar='METHOD',
+                   help='restrict --component-maps to a subset of {smica,nilc,commander,sevem} (default: all 4)')
+    p.add_argument('--all',             action='store_true',
+                   help='shortcut for --galmask --freq-maps --component-maps --beams (matches the legacy default; ~18 GB at release=4)')
 
     p = subparsers.add_parser(
         'download_desils_lrg',
@@ -168,7 +195,21 @@ if __name__ == '__main__':
         desi.download(args.survey, dr=1, nrfiles=nrfiles)
     elif args.command == 'download_planck':
         from . import planck
-        planck.download()
+        if args.all:
+            args.galmask = True
+            args.freq_maps = True
+            args.component_maps = True
+            args.beams = True
+        planck.download(
+            galmask = args.galmask,
+            freq_maps = args.freq_maps,
+            component_maps = args.component_maps,
+            beams = args.beams,
+            release = args.release,
+            freqs = args.freqs,
+            apodizations = args.apodizations,
+            methods = args.methods,
+        )
     elif args.command == 'download_desils_lrg':
         from . import desils_lrg
         if args.all:

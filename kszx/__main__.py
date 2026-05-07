@@ -6,8 +6,34 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest='command')
 
-    p = subparsers.add_parser('download_act')
-    p.add_argument('dr', type=int, help='Either 5 or 6 (for DR5 or DR6)')
+    p = subparsers.add_parser(
+        'download_act',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Download ACT data products (https://lambda.gsfc.nasa.gov/product/act).',
+        epilog=(
+            'By default, downloads NOTHING; pass one or more flags to select products.\n\n'
+            'Examples:\n'
+            '  python -m kszx download_act 6 --cmb --ivar --night\n'
+            '  python -m kszx download_act 6 --nilc --cluster-mask\n'
+            '  python -m kszx download_act 6 --cmb --ivar --beams --freqs 90 150\n'
+            '  python -m kszx download_act 6 --all\n'
+        ),
+    )
+    p.add_argument('dr', type=int, help='ACT data release: 5 or 6')
+    p.add_argument('--cmb',            action='store_true', help='per-frequency CMB maps')
+    p.add_argument('--ivar',           action='store_true', help='per-frequency ivar maps')
+    p.add_argument('--beams',          action='store_true', help='per-frequency beam files')
+    p.add_argument('--night',          action='store_true',
+                   help='for cmb/ivar/beams: night-only variant (combine with --daynight to fetch both)')
+    p.add_argument('--daynight',       action='store_true',
+                   help='for cmb/ivar/beams: daynight variant (default if neither --night nor --daynight is given)')
+    p.add_argument('--freqs', type=int, nargs='+', default=None, metavar='FREQ',
+                   help='restrict cmb/ivar/beams to a subset of {90,150,220} (default: all three)')
+    p.add_argument('--nilc',           action='store_true', help='DR6 NILC coadd map')
+    p.add_argument('--cluster-mask',   action='store_true', help='DR6 cluster mask (NERSC portal)')
+    p.add_argument('--nilc-wide-mask', action='store_true', help='DR6 NILC wide Galactic mask (NERSC portal)')
+    p.add_argument('--all',            action='store_true',
+                   help='shortcut: cmb+ivar+beams at default freqs, both night and daynight, plus nilc/cluster-mask/nilc-wide-mask if dr=6')
 
     p = subparsers.add_parser('download_desi')
     p.add_argument('survey', help='Survey name such as LRG_NGC')
@@ -114,7 +140,28 @@ if __name__ == '__main__':
         sys.exit(2)
     elif args.command == 'download_act':
         from . import act
-        act.download(dr=args.dr)
+        if args.all:
+            args.cmb = True
+            args.ivar = True
+            args.beams = True
+            args.night = True
+            args.daynight = True
+            if args.dr == 6:
+                args.nilc = True
+                args.cluster_mask = True
+                args.nilc_wide_mask = True
+        act.download(
+            dr = args.dr,
+            freqs = args.freqs,
+            cmb = args.cmb,
+            ivar = args.ivar,
+            beams = args.beams,
+            night = args.night,
+            daynight = args.daynight,
+            nilc = args.nilc,
+            cluster_mask = args.cluster_mask,
+            nilc_wide_mask = args.nilc_wide_mask,
+        )
     elif args.command == 'download_desi':
         from . import desi
         nrfiles = int(args.n) if (args.n is not None) else None

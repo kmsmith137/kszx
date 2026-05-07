@@ -109,18 +109,60 @@ def read_nilc_wide_mask(download=False):
     return pixell.enmap.read_map(filename)
 
 
-def download(dr, freq_list=None, night=False, cmb=True, ivar=True, beams=True):
-    r"""Downloads ACT data products (cmb, ivar, beam) for a given survey.
-        
-    Can be called from command line: ``python -m kszx download_act``."""
+def download(dr, *, freqs=None, cmb=False, ivar=False, beams=False,
+             night=False, daynight=False, nilc=False,
+             cluster_mask=False, nilc_wide_mask=False):
+    r"""Pre-fetch ACT data products.
 
-    if freq_list is None:
-        freq_list = [ 90, 150, 220 ]
+    All product flags default to False; pass keywords to select what to download.
 
-    for freq in freq_list:
-        _beam_filename(freq, dr, night=night, download=beams)
-        _cmb_filename(freq, dr, night=night, download=cmb)
-        _ivar_filename(freq, dr, night=night, download=ivar)
+      - ``dr`` (int): ACT data release (5 or 6).
+      - ``freqs`` (list of int or None): restrict per-frequency downloads
+        (cmb, ivar, beams) to this subset of {90, 150, 220}. Default is all three.
+      - ``cmb`` (bool): per-frequency CMB maps.
+      - ``ivar`` (bool): per-frequency ivar maps.
+      - ``beams`` (bool): per-frequency beam files.
+      - ``night`` (bool): for cmb/ivar/beams, fetch the night-only variant.
+      - ``daynight`` (bool): for cmb/ivar/beams, fetch the daynight variant.
+        If neither ``night`` nor ``daynight`` is given, ``daynight`` is used.
+      - ``nilc`` (bool): DR6 NILC coadd map.
+      - ``cluster_mask`` (bool): DR6 cluster mask (from the NERSC portal).
+      - ``nilc_wide_mask`` (bool): DR6 NILC wide Galactic mask (NERSC portal).
+
+    Already-present files are skipped (re-running is safe).
+
+    Can be called from command line: ``python -m kszx download_act ...``.
+    """
+
+    if freqs is None:
+        freqs = [90, 150, 220]
+
+    dlfunc = 'kszx.act.download'
+
+    night_flags = []
+    if night:
+        night_flags.append(True)
+    if daynight:
+        night_flags.append(False)
+    if not night_flags:
+        night_flags = [False]   # default: daynight
+
+    if cmb or ivar or beams:
+        for freq in freqs:
+            for nflag in night_flags:
+                if cmb:
+                    _cmb_filename(freq, dr, night=nflag, download=True, dlfunc=dlfunc)
+                if ivar:
+                    _ivar_filename(freq, dr, night=nflag, download=True, dlfunc=dlfunc)
+                if beams:
+                    _beam_filename(freq, dr, night=nflag, download=True, dlfunc=dlfunc)
+
+    if nilc:
+        _cmb_filename('nilc', dr, download=True, dlfunc=dlfunc)
+    if cluster_mask:
+        _cluster_mask_filename(download=True, dlfunc=dlfunc)
+    if nilc_wide_mask:
+        _nilc_wide_mask_filename(download=True, dlfunc=dlfunc)
 
 
 ####################################################################################################

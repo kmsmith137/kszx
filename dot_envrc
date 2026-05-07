@@ -24,12 +24,16 @@ fi
 
 
 # Step 1: install direnv
-# brew install direnv             # apple
+# brew install direnv           # apple
 # sudo apt install direnv       # ubuntu
+#
+# I also recommend editing ~/.config/direnv/direnv.toml to make direnv less verbose:
+#   [global]
+#   hide_env_diff = true      # assumes direnv >= 2.34
 
-# Step 2: install direnv hook
-# eval "$(direnv hook zsh)"  # .zshrc version
-# eval "$(direnv hook zsh)"  # .bashrc version
+# Step 2: install direnv hook in bashrc/zshrc
+# eval "$(direnv hook zsh)"   # .zshrc version
+# eval "$(direnv hook bash)"  # .bashrc version
 
 # Step 3: create venv and pip install there
 # python -m venv --system-site-packages .venv

@@ -31,12 +31,75 @@ class BaseLikelihood:
             derived[key] = eval(formula, {"np": np}, params)
         return derived
 
-    def uniform_log_prior(self, **params):
-        for key in self.params:
-            low, high = self.params[key]['prior']
-            if not (low < params[key] < high):
-                return -np.inf
+    @staticmethod
+    def uniform_log_prior(value, low, high):
+        if not (low < value < high):
+            return -np.inf
         return 0.0
+
+    @staticmethod
+    def gaussian_log_prior(value, mu, sigma):
+        if sigma <= 0:
+            raise ValueError(f"Gaussian prior requires sigma > 0, got {sigma=}")
+        delta = (value - mu) / sigma
+        return -0.5 * delta**2 - np.log(np.sqrt(2 * np.pi) * sigma)
+
+    def _get_prior_bounds(self, name):
+        prior = self.params[name]['prior']
+
+        if isinstance(prior, list):
+            prior_type = 'uniform'
+            attrs = {}
+            attrs['low'], attrs['high'] = prior[0], prior[1]
+        elif isinstance(prior, dict):
+            prior_type = prior.get('type', None)
+            attrs = {k: v for k, v in prior.items() if k != 'type'}
+        else:
+            raise ValueError(f"Unsupported prior format for params[{name}]: {prior}")
+
+        if prior_type == 'uniform':
+            return attrs['low'], attrs['high']
+
+        if prior_type == 'gaussian':
+            if 'bounds' in attrs:
+                low, high = attrs['bounds']
+            elif ('low' in attrs) and ('high' in attrs):
+                low, high = attrs['low'], attrs['high']
+            else:
+                nsigma = attrs.get('nsigma', 5.0)
+                low = attrs['mu'] - nsigma * attrs['sigma']
+                high = attrs['mu'] + nsigma * attrs['sigma']
+            return low, high
+
+        raise ValueError(f"{prior_type!r} prior but no finite bounds were provided. Add attrs['bounds'] = [low, high] for operations that need an initialization range.")
+
+    def log_prior(self, **params):
+        logp = 0.0
+
+        for key in self.params:
+            prior = self.params[key]['prior']
+
+            if isinstance(prior, list):
+                prior_type = 'uniform'
+                attrs = {}
+                attrs['low'], attrs['high'] = prior[0], prior[1]
+            elif isinstance(prior, dict):
+                prior_type = prior.get('type', None)
+                attrs = {k: v for k, v in prior.items() if k != 'type'}
+            else:
+                raise ValueError(f"Unsupported prior format for params[{key}]: {prior}")
+
+            if prior_type == 'uniform':
+                logp += self.uniform_log_prior(params[key], attrs['low'], attrs['high'])
+            elif prior_type == 'gaussian':
+                logp += self.gaussian_log_prior(params[key], attrs['mu'], attrs['sigma'])
+            else:
+                raise ValueError(f"Unsupported prior type for params[{key}]: {prior_type}")
+
+            if not np.isfinite(logp):
+                return -np.inf
+
+        return logp
 
     def log_likelihood(self, *params):
         r""" """
@@ -64,7 +127,7 @@ class BaseLikelihood:
             cov_cholesky = self.cov_cholesky_interp([params[name] for name in self.params])
             logdet_cov = self.logdet_interp([params[name] for name in self.params])
             if np.isnan(cov_cholesky).any(): 
-                # We can compute the cholesky interpolation outside the range since the prior is acting below (at self.uniform_log_prior step)
+                # We can compute the cholesky interpolation outside the range since the prior is acting below (at self.log_prior step)
                 # It is not a problem if the range of the interpolation is as wide as the prior range, the likelihood will be -np.inf due to the prior as well.
                 cov_cholesky, logdet_cov = np.eye(cov_cholesky.shape[0]), 0
         else: 
@@ -75,8 +138,8 @@ class BaseLikelihood:
         linv_x = scipy.linalg.solve_triangular(cov_cholesky, x, lower=True)
         logL = -(0.5 * np.dot(linv_x, linv_x) + logdet_cov)  # + x.size*np.log(2*np.pi))
 
-        # Add uniform prior: 
-        logL += self.uniform_log_prior(**params)
+        # Add parameter priors.
+        logL += self.log_prior(**params)
 
         # if self.jeffreys_prior:
         #     B, D = (self.B, self.D)
@@ -132,7 +195,10 @@ class BaseLikelihood:
 
         np.random.seed(seed)
         for i in range(ntest): 
-            params_test = {name: np.random.uniform(low=self.params[name]['prior'][0], high=self.params[name]['prior'][1], size=1)[0] for name in self.params}
+            params_test = {
+                name: np.random.uniform(low=self._get_prior_bounds(name)[0], high=self._get_prior_bounds(name)[1], size=1)[0]
+                for name in self.params
+            }
             print(params_test)
             _, cov = self.mean_and_cov(**params_test)
             chol = np.linalg.cholesky(cov)
@@ -163,7 +229,8 @@ class BaseLikelihood:
 
         x0 = np.zeros((nprofiles, len(self.params)))
         for i, key in enumerate(self.params):
-            x0[:, i] = np.random.uniform(self.params[key]['prior'][0], self.params[key]['prior'][1], size=nprofiles)
+            low, high = self._get_prior_bounds(key)
+            x0[:, i] = np.random.uniform(low, high, size=nprofiles)
 
         f = lambda x: - self.log_likelihood(*x)  # note minus sign
 
@@ -202,7 +269,8 @@ class BaseLikelihood:
         else:
             x0 = np.zeros((nwalkers, len(self.params)))
             for i, key in enumerate(self.params):
-                x0[:, i] = np.random.uniform(self.params[key]['prior'][0], self.params[key]['prior'][1], size=nwalkers)
+                low, high = self._get_prior_bounds(key)
+                x0[:, i] = np.random.uniform(low, high, size=nwalkers)
 
         logL = lambda x: self.log_likelihood(*x)
 
@@ -362,8 +430,11 @@ class Likelihood(BaseLikelihood):
                  cov_interp=False, interp_method='linear'):
         r""" 
         pout: KszPipeOutdir object. 
-        params: dictionary of parameters to vary in the inference. Each parameter should have a 'ref' value, a 'prior' range and a 'latex' label for plotting. 
-                Optionally, an 'interp' range can be provided for interpolation of the covariance matrix.
+        params: dictionary of parameters to vary in the inference. Each parameter should have a 'ref' value, a 'prior' definition and a 'latex' label for plotting.
+            The legacy prior format is a two-element list [low, high], interpreted as a uniform prior.
+            The explicit format is {'type': 'uniform' or 'gaussian', 'attrs': {...}}.
+            For a gaussian prior, attrs should at least contain 'mean' and 'sigma'.
+            Optionally, an 'interp' range can be provided for interpolation of the covariance matrix.
         fields: dictionary of fields to include in the likelihood ('gg', 'gv', 'vv'). For each field you need to provide a dictionary with the entries to call  
                 pout.pgg_mean() / pout.pgv_mean() ... ('gv': 'freq', 'field', 'ell') and all field have 'name_params'. name_params should be a dictionary with the mapping between the parameter names used in the KszPipeOutdir methods and the parameter names used in the inference (i.e. in params). If you want to fix some parameters to a given value, you can provide a 'fix_params' entry with a dictionary of the parameters to fix and their values. For example, 'fix_params': {'bv': 1.0} will fix bv to 1.0 in the likelihood evaluation.
         first_kbin, last_kbin: dictionary with the same key entries than fields.
@@ -466,7 +537,7 @@ class Likelihood(BaseLikelihood):
             print(f'Interpolate the Cholesky decomposition of the covariance matrix with RegularGridInterpolator and method={interp_method}')
             # Check if the interp range is as wide as the prior range:
             for name in self.params:
-                prior, interp = params[name]['prior'], params[name]['interp']
+                prior, interp = self._get_prior_bounds(name), params[name]['interp']
                 assert prior[0] >= interp[0], f'params[{name}]: {params[name]}'
                 assert prior[1] <= interp[1], f'params[{name}]: {params[name]}'
 

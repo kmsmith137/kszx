@@ -665,8 +665,41 @@ def std_notation(value, sigfigs, positive_sign=False):
 def flatten_cholesky(L):
     return L[np.tril_indices_from(L)]
 
+
 def unflatten_cholesky(vec, dim):
     L = np.zeros((dim, dim))
     tril_indices = np.tril_indices(dim)
     L[tril_indices] = vec
     return L
+
+
+def cross_covariance(X: np.ndarray, Y: np.ndarray) -> np.ndarray:
+    """
+    Compute cross-covariance between two arrays X and Y.
+
+    Parameters
+    ----------
+    X : np.ndarray, shape (n_samples, n_features_X)
+    Y : np.ndarray, shape (n_samples, n_features_Y)
+
+    Returns
+    -------
+    np.ndarray, shape (n_features_X, n_features_Y)
+        Cross-covariance matrix.
+    """
+    if X.shape[0] != Y.shape[0]:
+        raise ValueError("X and Y must have the same number of samples (rows).")
+
+    return ((X - np.mean(X, axis=0)).T @ (Y - np.mean(Y, axis=0))) / (X.shape[0] - 1)
+
+
+def setup_mplstyle():
+    """Load the default kszx style for matplotlib"""
+    # you may need to load tex with `module load texlive`
+    from matplotlib import pyplot as plt
+
+    # I don't know what is going on with getdist .. I need to load matplotlib inline after the import of getdist, so I load it here..
+    from getdist import MCSamples, plots
+
+    plt.style.use(os.path.join(os.path.abspath(os.path.dirname(__file__)), 'kszx_style.mplstyle'))
+

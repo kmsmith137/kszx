@@ -18,7 +18,8 @@ from .core import \
     kbin_average, \
     fkp_from_ivar_2d, \
     ivar_combine, \
-    estimate_cl
+    estimate_cl, \
+    map_dot_product
 
 # "Core" classes.
 from .Box import Box
@@ -50,6 +51,12 @@ from . import desils_lrg
 from . import desils_main
 from . import planck
 from . import sdss
+
+# Hacking for ML paper -- interfaces may change in the future
+from . import mlhack
+
+# Hacking for wide-angle paper -- interfaces may change in the future
+from . import wahack
 
 # This submodule is a place for old code to retire peacefully.
 from . import retirement_home

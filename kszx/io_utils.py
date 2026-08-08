@@ -16,8 +16,8 @@ import numpy as np
 import wget as wget_module
 
 
-def read_pickle(filename):
-    print(f'Reading {filename}\n', end='')
+def read_pickle(filename, verbose=True):
+    if verbose: print(f'Reading {filename}\n', end='')
     with open(filename, 'rb') as f:
         return pickle.load(f)
 
@@ -29,8 +29,8 @@ def write_pickle(filename, x):
         pickle.dump(x, f)
 
 
-def read_npy(filename):
-    print(f'Reading {filename}\n', end='')
+def read_npy(filename, verbose=True):
+    if verbose: print(f'Reading {filename}\n', end='')
     return np.load(filename, allow_pickle=True)
 
 

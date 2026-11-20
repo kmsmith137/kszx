@@ -8,6 +8,17 @@ Data files are mostly found here:
 
 With the exception of the randoms, which are here:
   https://data.desi.lbl.gov/public/ets/target/catalogs/dr9/0.49.0/randoms/
+
+DR11 (``dr=11`` argument): the Legacy Survey DR11 LRG catalogs (Rongpu Zhou, target
+selection 5.1.0) and the corresponding randoms + lrg_mask are not public yet, so they
+can't be auto-downloaded. At NERSC, create these symlinks (one-time setup)::
+
+   mkdir -p $KSZX_DATA_DIR/desils
+   ln -s /global/cfs/cdirs/desi/users/rongpu/targets/dr11.0/5.1.0/resolve $KSZX_DATA_DIR/desils/lrg_dr11
+   ln -s /global/cfs/cdirs/desi/target/catalogs/dr11/5.1.0/randoms/resolve $KSZX_DATA_DIR/desils/ets_dr11_randoms
+   ln -s /global/cfs/cdirs/desi/users/rongpu/desi_mask/randoms_dr11/lrgmask_v1.1 $KSZX_DATA_DIR/desils/lrgmask_dr11_randoms
+
+(If $KSZX_DATA_DIR is not set, replace it by $HOME/kszx_data.)
 """
 
 import os
@@ -22,25 +33,35 @@ from . import Catalog
 from . import io_utils
     
 
-def read_galaxies(extended, download=False):
+def read_galaxies(extended=False, download=False, dr=9):
     r"""Reads LRGs with no imaging weights or quality cuts, and returns a Catalog object.
 
     After calling this function, you'll probably want to call :func:`~kszx.desils_lrg.compute_imaging_weights`
     and/or :func:`~kszx.desils_lrg.apply_quality_cuts`. You'll also want to call :func:`Catalog.apply_redshift_cut()`
     to retrict to an appropriate redshift range.
-    
+
     Function arguments:
 
       - ``extended`` (boolean): determines whether "extended" or "main" catalog is read.
+        (Only the "main" catalog is available for DR11.)
       - ``download`` (boolean): if True, then all needed data files will be auto-downloaded.
+        (Not supported for DR11, see module docstring.)
+      - ``dr`` (integer): Legacy Survey data release, either 9 (default) or 11.
 
     Returns a :class:`kszx.Catalog` object, with the following columns::
-    
+
       ra_deg, dec_deg, z, zerr,  # sky location, redshift, redshift error
       pz_bin,                    # in {1,2,3,4}
       nobs_{g,r,z}, ebv, lrg_mask, maskbits      # for quality cuts
       photsys, galdepth_{g,r,z}, psfsize_{g,r,z} # for imaging weights
+
+    For DR11, the ``pz_bin``, ``galdepth_*`` and ``psfsize_*`` columns are not available
+    (and :func:`~kszx.desils_lrg.compute_imaging_weights` is not supported).
     """
+
+    if dr == 11:
+        return _read_galaxies_dr11(extended)
+    assert dr == 9, f'kszx.desils_lrg.read_galaxies: {dr=} is not supported (expected 9 or 11)'
 
     # Note: LRG catalog is split between a few FITS files (see _catalog_filename docstring).
 
@@ -68,19 +89,22 @@ def read_galaxies(extended, download=False):
     return catalog
 
 
-def read_randoms(ix_list, download=False):
+def read_randoms(ix_list, download=False, dr=9):
     r"""Reads LRG random catalog with no quality cuts, and returns a Catalog object.
 
     After calling this function, you'll probably want to call :func:`~kszx.desils_lrg.apply_quality_cuts`.
     Note that DESILS-LRG randoms do not have redshifts!
-    
+
     Function arguments:
 
-      - ``ix_list`` (list): a list of integers $0 \le i < 200$. The DESILS-LRG randoms
-        are split across 200 source files, and this argument determines which source files
-        will be read.
-    
+      - ``ix_list`` (list): a list of integers $0 \le i < 200$ (DR9) or $0 \le i < 20$ (DR11).
+        The DESILS-LRG randoms are split across 200 (DR9) or 20 (DR11) source files, and this
+        argument determines which source files will be read.
+
       - ``download`` (boolean): if True, then all needed data files will be auto-downloaded.
+        (Not supported for DR11, see module docstring.)
+
+      - ``dr`` (integer): Legacy Survey data release, either 9 (default) or 11.
 
     Returns a :class:`kszx.Catalog` object, obtained by combining randoms from all
     source files in ``ix_list``, with the following columns::
@@ -89,24 +113,28 @@ def read_randoms(ix_list, download=False):
       nobs_{g,r,z}, ebv, lrg_mask, maskbits  # for quality cuts
     """
 
+    assert dr in (9, 11), f'kszx.desils_lrg.read_randoms: {dr=} is not supported (expected 9 or 11)'
     assert len(ix_list) >= 1
     assert len(set(ix_list)) == len(ix_list)  # no duplicates
-    
-    catalog_list = [ ]
-    
-    for ix in ix_list:
-        assert 0 <= ix < 200   # generalize later
 
+    catalog_list = [ ]
+
+    for ix in ix_list:
         # List of pairs (my_col_name, fits_col_name).
         cols = [ ('ra_deg','RA'), ('dec_deg','DEC'), ('ebv','EBV') ]
         cols += [ (f'nobs_{x}', f'NOBS_{x.upper()}') for x in ['g','r','z'] ]
         cols += [ ('maskbits','MASKBITS') ]
-    
-        filename = _random_filename(ix, mflag=False, download=download, dlfunc='kszx.desils_lrg.read_galaxies')
+
+        if dr == 11:
+            filename = _random_filename_dr11(ix, mflag=False)
+            filename2 = _random_filename_dr11(ix, mflag=True)
+        else:
+            filename = _random_filename(ix, mflag=False, download=download, dlfunc='kszx.desils_lrg.read_galaxies')
+            filename2 = _random_filename(ix, mflag=True, download=download, dlfunc='kszx.desils_lrg.read_galaxies')
+
         catalog = Catalog.from_fits(filename, cols)
 
-        # lrg_mask
-        filename2 = _random_filename(ix, mflag=True, download=download, dlfunc='kszx.desils_lrg.read_galaxies')
+        # lrg_mask (row-matched to the randoms file)
         ctmp = Catalog.from_fits(filename2, [('lrg_mask','lrg_mask')])
         catalog.add_column('lrg_mask', ctmp.lrg_mask)
 
@@ -143,6 +171,10 @@ def compute_imaging_weights(gcat, extended, ebv=True, download=False):
     ``galdepth_rmag_ebv``, and ``galdepth_zmag_ebv`` columns to the Catalog (following the python
     script referenced above.)
     """
+
+    if 'pz_bin' not in gcat.col_names:
+        raise NotImplementedError('kszx.desils_lrg.compute_imaging_weights: imaging weights are only'
+                                  + ' available for DR9 (catalog has no pz_bin column, e.g. DR11)')
 
     # Weights array that will be added to Catalog at the end.
     weight = np.zeros(gcat.size)
@@ -193,7 +225,7 @@ def compute_imaging_weights(gcat, extended, ebv=True, download=False):
     gcat.add_column('weight', weight)
 
 
-def apply_quality_cuts(catalog, min_nobs=2, max_ebv=0.15, max_stardens=2500, lrg_mask=True, maskbits=True, island_mask=True, mask_negative_zerr=True, download=True):
+def apply_quality_cuts(catalog, min_nobs=2, max_ebv=0.15, max_stardens=2500, lrg_mask=True, maskbits=True, island_mask=None, mask_negative_zerr=True, download=True, dr=9):
     r"""Applies LRG quality cuts in-place to a catalog (usually called just after read_galaxies() or read_randoms()).
 
     Function arguments:
@@ -219,6 +251,8 @@ def apply_quality_cuts(catalog, min_nobs=2, max_ebv=0.15, max_stardens=2500, lrg
         below.)
     
       - ``island_mask`` (boolean): If True, then some islands in the NGC will be masked.
+        If None (default), then True for DR9 and False for DR11 (where these regions are
+        covered by DECam data).
 
       - ``mask_negative_zerr`` (boolean): If True, galaxies with photo-z error < 0
         will be masked. (This flag was added by Kendrick, and is not in Rongpu's original
@@ -227,13 +261,22 @@ def apply_quality_cuts(catalog, min_nobs=2, max_ebv=0.15, max_stardens=2500, lrg
 
       - ``download`` (boolean): if True, then all needed data files will be auto-downloaded.
 
+      - ``dr`` (integer): Legacy Survey data release, either 9 (default) or 11. Only used
+        to choose the default value of ``island_mask``. (The stellar density map is full-sky
+        and is used for both.)
+
     Reference:
-    
+
        - https://data.desi.lbl.gov/public/papers/c3/lrg_xcorr_2023/v1/catalogs/quality_cuts.py
        - https://data.desi.lbl.gov/public/papers/c3/lrg_xcorr_2023/v1/catalogs/randoms_quality_cuts.py
        - https://data.desi.lbl.gov/public/papers/c3/lrg_xcorr_2023/v1/catalogs/lrgmask_v1.1/README.txt
        - https://www.legacysurvey.org/dr10/bitmasks/
     """
+
+    assert dr in (9, 11), f'kszx.desils_lrg.apply_quality_cuts: {dr=} is not supported (expected 9 or 11)'
+
+    if island_mask is None:
+        island_mask = (dr == 9)
 
     if island_mask:
         mask = ~((catalog.dec_deg < -10.5) & (catalog.ra_deg > 120) & (catalog.ra_deg < 260))
@@ -284,6 +327,66 @@ def read_stardens_map(download=False):
 
 
 ####################################################################################################
+
+
+def _read_galaxies_dr11(extended):
+    """Helper for read_galaxies(dr=11). The DR11 LRG catalog is split between row-matched FITS files:
+
+        dr11_lrg_5.1.0_basic.fits              RA, DEC, NOBS_{G,R,Z}, MASKBITS, PHOTSYS, TARGETID, ...
+        dr11_lrg_5.1.0_basic_pz.fits           TARGETID, Z_PHOT_{MEAN,MEDIAN,STD,...}, Z_SPEC, ...
+        dr11_lrg_5.1.0_photom.fits             EBV, FLUX_*, MW_TRANSMISSION_*, ...
+        dr11_lrg_5.1.0_lrgmask_v1.1.fits.gz    lrg_mask
+    """
+
+    if extended:
+        raise RuntimeError('kszx.desils_lrg.read_galaxies: extended=True is not available for dr=11')
+
+    cols = [ ('ra_deg','RA'), ('dec_deg','DEC'), ('targetid','TARGETID') ]
+    cols += [ (f'nobs_{x}', f'NOBS_{x.upper()}') for x in ['g','r','z'] ]
+    cols += [ ('maskbits','MASKBITS'), ('photsys','PHOTSYS') ]
+    catalog = Catalog.from_fits(_catalog_filename_dr11('basic'), cols, name='DESILS-LRG DR11 galaxies')
+
+    # Photo-z (check row-matching with TARGETID).
+    ctmp = Catalog.from_fits(_catalog_filename_dr11('basic_pz'), [('z','Z_PHOT_MEDIAN'), ('zerr','Z_PHOT_STD'), ('targetid_pz','TARGETID')])
+    assert np.array_equal(catalog.targetid, ctmp.targetid_pz), 'DR11 LRG basic and basic_pz files are not row-matched'
+    ctmp.remove_column('targetid_pz')
+    catalog.absorb_columns(ctmp, destructive=True)
+
+    ctmp = Catalog.from_fits(_catalog_filename_dr11('photom'), [('ebv','EBV')])
+    catalog.absorb_columns(ctmp, destructive=True)
+
+    ctmp = Catalog.from_fits(_catalog_filename_dr11('lrgmask_v1.1', ext='.fits.gz'), [('lrg_mask','lrg_mask')])
+    catalog.absorb_columns(ctmp, destructive=True)
+
+    return catalog
+
+
+def _catalog_filename_dr11(suffix, ext='.fits'):
+    assert suffix in [ 'basic', 'basic_pz', 'photom', 'lrgmask_v1.1', 'stellar_mass' ]
+    return _desils_dr11_path('lrg_dr11', f'dr11_lrg_5.1.0_{suffix}{ext}')
+
+
+def _random_filename_dr11(ix, mflag):
+    """The index 'ix' satisfies 0 <= ix < 20. Same 'mflag' convention as _random_filename()."""
+
+    assert 0 <= ix < 20
+
+    if mflag:
+        return _desils_dr11_path('lrgmask_dr11_randoms', f'randoms-1-{ix}-lrgmask_v1.1.fits.gz')
+    else:
+        return _desils_dr11_path('ets_dr11_randoms', f'randoms-1-{ix}.fits')
+
+
+def _desils_dr11_path(subdir, basename):
+    """DR11 files can't be downloaded (not public yet), they are accessed through symlinks (see module docstring)."""
+
+    abspath = os.path.join(io_utils.get_data_dir(), 'desils', subdir, basename)
+
+    if not os.path.exists(abspath):
+        raise RuntimeError(f'File {abspath} not found. DR11 LRG files can not be auto-downloaded:'
+                           + ' see the kszx.desils_lrg module docstring for the symlinks to create at NERSC.')
+
+    return abspath
 
 
 def _catalog_filename(extended, suffix=None, download=False, dlfunc=None):

@@ -575,8 +575,8 @@ class Likelihood(BaseLikelihood):
             D = D[:, :-1]
 
         D = 1/4 * D.reshape(D.shape[0]//2, 2, D.shape[1]//2, 2).sum(axis=(1,3))
-        B = 1/4 * B.reshape(B.shape[0], B.shape[1]//2, 2).sum(axis=2)
-        C = 1/4 * C.reshape(C.shape[0]//2, 2, C.shape[1]).sum(axis=1)
+        B = 1/2 * B.reshape(B.shape[0], B.shape[1]//2, 2).sum(axis=2)
+        C = 1/2 * C.reshape(C.shape[0]//2, 2, C.shape[1]).sum(axis=1)
 
         return np.block([[A, B], [C, D]]) 
 

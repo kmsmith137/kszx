@@ -10,3 +10,4 @@
 .. autofunction:: kszx.simulate_gaussian_field
 .. autofunction:: kszx.estimate_power_spectrum
 .. autofunction:: kszx.kbin_average
+.. autofunction:: kszx.map_dot_product

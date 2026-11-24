@@ -50,6 +50,7 @@ from . import act
 from . import desi
 from . import desils_lrg
 from . import desils_main
+from . import flamingo
 from . import planck
 from . import quijote
 from . import sdss

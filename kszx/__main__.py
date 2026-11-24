@@ -90,6 +90,40 @@ if __name__ == '__main__':
     p.add_argument('--all',             action='store_true',
                    help='shortcut for --main --extended --imaging-weights --stardens, plus all 200 randoms if --randoms is unset')
 
+    p = subparsers.add_parser(
+        'download_flamingo',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Download selected columns from FLAMINGO snapshots / SOAP halo catalogs (https://dataweb.cosma.dur.ac.uk:8443/flamingo/).',
+        epilog=(
+            'By default, downloads NOTHING; pass one or more flags to select columns.\n'
+            'Column names are HDF5 dataset names (relative to PartTypeN for particles).\n'
+            'New columns are appended to existing local files.\n\n'
+            'With --show: shows locally downloaded data and disk usage (sim and z are optional filters).\n'
+            'With --delete: deletes the selected columns from local files, and repacks them to reclaim space.\n\n'
+            'Examples:\n'
+            '  python -m kszx download_flamingo L1_m8 4 --gas Coordinates Masses\n'
+            '  python -m kszx download_flamingo L1_m8 4 --halos InputHalos/HaloCentre SO/200_crit/TotalMass InputHalos/IsCentral\n'
+            '  python -m kszx download_flamingo L1_m9/fgas+2sigma 1 --dm Coordinates --files 0 1\n'
+            '  python -m kszx download_flamingo --show\n'
+            '  python -m kszx download_flamingo L1_m8 4 --delete --dm Masses\n'
+        ),
+    )
+    p.add_argument('sim', nargs='?', default=None, help="simulation name, e.g. 'L1_m8', 'L1_m8_DMO', 'L1_m9/fgas+2sigma'")
+    p.add_argument('z', nargs='?', type=float, default=None, help='snapshot redshift')
+    p.add_argument('--gas',       nargs='+', default=(), metavar='COL', help='PartType0 columns')
+    p.add_argument('--dm',        nargs='+', default=(), metavar='COL', help='PartType1 columns')
+    p.add_argument('--stars',     nargs='+', default=(), metavar='COL', help='PartType4 columns')
+    p.add_argument('--bh',        nargs='+', default=(), metavar='COL', help='PartType5 columns')
+    p.add_argument('--neutrinos', nargs='+', default=(), metavar='COL', help='PartType6 columns')
+    p.add_argument('--halos',     nargs='+', default=(), metavar='COL', help='SOAP halo catalog columns')
+    p.add_argument('--files', type=int, nargs='+', default=None, metavar='I',
+                   help='restrict to a subset of snapshot chunk files (default: all)')
+    p.add_argument('-p', type=int, default=4, help='number of simultaneous downloads (default 4; server asks for <= 4), or files repacked in parallel with --delete')
+    g = p.add_mutually_exclusive_group()
+    g.add_argument('--show',   action='store_true', help='show locally downloaded data and disk usage, instead of downloading')
+    g.add_argument('--delete', action='store_true', help='delete the selected columns from local files (and repack), instead of downloading')
+    p.add_argument('-y', '--yes', action='store_true', help="with --delete: don't ask for confirmation")
+
     p = subparsers.add_parser('download_sdss')
     p.add_argument('survey', help='Survey name such as CMASS_North')
 
@@ -225,6 +259,27 @@ if __name__ == '__main__':
             randoms = args.randoms,
             imaging_weights = args.imaging_weights,
             stardens = args.stardens,
+        )
+    elif args.command == 'download_flamingo':
+        from . import flamingo
+        if args.show:
+            flamingo.show(args.sim, args.z)
+            sys.exit(0)
+        if (args.sim is None) or (args.z is None):
+            parser.error('download_flamingo: sim and z arguments are required (unless --show is specified)')
+        func = flamingo.delete if args.delete else flamingo.download
+        kwds = { 'confirm': not args.yes } if args.delete else { }
+        func(
+            args.sim, args.z,
+            gas = args.gas,
+            dm = args.dm,
+            stars = args.stars,
+            bh = args.bh,
+            neutrinos = args.neutrinos,
+            halos = args.halos,
+            files = args.files,
+            nproc = args.p,
+            **kwds,
         )
     elif args.command == 'download_sdss':
         from . import sdss

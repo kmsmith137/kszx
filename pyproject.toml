@@ -6,6 +6,7 @@ dependencies = [ 'scipy', 'matplotlib', 'h5py', 'wget', 'astropy', 'camb', 'heal
 
 [project.optional-dependencies]
 quijote = ['globus-sdk', 'hdf5plugin']
+flamingo = ['hdfstream']
 
 [build-system]
 requires = [ "setuptools>=61.0", "pybind11>=2.10", "numpy" ]

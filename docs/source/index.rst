@@ -52,6 +52,7 @@ kszx documentation
    act
    desi
    desils_lrg
+   flamingo
    planck
    sdss
 

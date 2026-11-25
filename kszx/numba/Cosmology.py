@@ -167,6 +167,9 @@ class Cosmology:
             mnu = params.mnu,
             tau = params.tau
         )
+
+        # Massive-neutrino density omega_nu h^2, as computed by CAMB from mnu (used e.g. in kszx.profiles).
+        self.omnuh2 = camb_params.omnuh2
         
         camb_params.InitPower.set_params(
             As = params.scalar_amp,

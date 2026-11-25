@@ -1,5 +1,6 @@
 import functools
 
+import camb
 import numpy as np
 from scipy.special import j0
 
@@ -85,3 +86,19 @@ def test_profile_shapes():
     assert prof.projected(cosmo, R=1.01*rt, logm=13.0, z=0.5) == 0.0
 
     print('test_profile_shapes(): pass')
+
+
+def test_baryon_fraction():
+    """Battaglia's default f_b is Omega_b / Omega_m with CAMB's Omega_m (which includes massive neutrinos)."""
+
+    print('test_baryon_fraction(): start')
+    cosmo = _cosmo()
+    p = cosmo.params
+    cp = camb.set_params(H0=100*p.h, ombh2=p.ombh2, omch2=p.omch2, mnu=p.mnu, nnu=p.nnu)
+    fb = p.ombh2 / p.h**2 / cp.omegam
+
+    assert cosmo.omnuh2 > 0.0
+    assert abs(profiles.Battaglia().baryon_fraction(cosmo) / fb - 1.0) < 1.0e-10
+    assert profiles.Battaglia(fb=0.15).baryon_fraction(cosmo) == 0.15
+
+    print('test_baryon_fraction(): pass')

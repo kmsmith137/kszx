@@ -226,9 +226,9 @@ class Battaglia(HaloProfile):
            - ``fit`` (str): ``'AGN'`` (AGN feedback, default) or ``'SH'`` (shock heating).
            - ``truncate`` (float): truncation radius in units of $R_{200c}$ (default 2).
            - ``mu_e`` (float): mean molecular weight per free electron (default 1.14).
-           - ``fb`` (float or None): baryon fraction. If None, uses ``ombh2 / (ombh2 + omch2)``
-             from ``cosmo.params`` (consistent with ``Cosmology.rhom_comoving``, which also omits
-             massive neutrinos).
+           - ``fb`` (float or None): baryon fraction. If None, uses $\Omega_b/\Omega_m$ =
+             ``ombh2 / (ombh2 + omch2 + omnuh2)``, with CAMB's massive-neutrino density ``cosmo.omnuh2``
+             (as in CAMB's ``omegam``, CCL, class_sz and BaryonForge).
         """
         if fit not in self.fits:
             raise ValueError(f"Battaglia: fit={fit!r} not recognized (expected one of {list(self.fits)})")
@@ -242,11 +242,12 @@ class Battaglia(HaloProfile):
         return f'Battaglia(fit={self.fit!r}, truncate={self.truncate}, mu_e={self.mu_e}, fb={self.fb})'
 
     def baryon_fraction(self, cosmo):
-        """Returns $f_b$: the constructor's ``fb``, or ``ombh2 / (ombh2 + omch2)``."""
+        """Returns $f_b$: the constructor's ``fb``, or ``ombh2 / (ombh2 + omch2 + omnuh2)``."""
         if self.fb is not None:
             return float(self.fb)
         p = cosmo.params
-        return p.ombh2 / (p.ombh2 + p.omch2)
+        omnuh2 = getattr(cosmo, 'omnuh2', 0.0)   # 0 for a Cosmology pickled before omnuh2 was added
+        return p.ombh2 / (p.ombh2 + p.omch2 + omnuh2)
 
     def r_t(self, cosmo, *, logm, z):
         """Comoving truncation radius ``truncate * R_200c`` [Mpc]."""

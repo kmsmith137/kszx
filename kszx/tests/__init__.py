@@ -41,4 +41,5 @@ def run_all_tests():
     test_profiles.test_profile_shapes()
     test_profiles.test_battaglia_fourier()
     test_profiles.test_nfw_fourier()
+    test_profiles.test_baryon_fraction()
     

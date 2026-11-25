@@ -1,4 +1,4 @@
-r"""Radial profiles of halos: the Battaglia (2012) gas optical depth and a truncated NFW.
+r"""Radial profiles of halos: the Battaglia (2016) gas optical depth and a truncated NFW.
 
 Conventions:
 
@@ -193,23 +193,29 @@ class NFW(HaloProfile):
 
 
 class Battaglia(HaloProfile):
-    # (A, alpha_M, alpha_z) for each of rho_0, alpha, beta (Battaglia 2012, arXiv:1109.3711, Table 1).
+    # (A, alpha_M, alpha_z) for each of rho_0, alpha, beta (Battaglia 2016, arXiv:1607.02442, Table 2, Delta = 200).
     fits = {
         'AGN': ((4.0e3, 0.29, -0.66), (0.88, -0.03, 0.19), (3.83, 0.04, -0.025)),
         'SH': ((1.9e4, 0.09, -0.95), (0.70, -0.017, 0.27), (4.43, 0.005, 0.037)),
     }
 
     def __init__(self, fit='AGN', truncate=2.0, mu_e=1.14, fb=None):
-        r"""Battaglia et al. (2012) gas density profile, as an optical depth per comoving Mpc.
+        r"""Battaglia (2016) gas density profile, as an optical depth per comoving Mpc.
 
-        The gas density on $M = M_{200c}$, with $x = r / R_{200c}$:
+        The gas density on $M = M_{200c}$, with $x = r / R_{200c}$ (arXiv:1607.02442, Eqs. A1-A2):
 
         $$\rho_{\rm gas}(r) = f_b\, \rho_c(z)\, \rho_0 \Big(\frac{x}{x_c}\Big)^\gamma
         \Big[1 + \Big(\frac{x}{x_c}\Big)^\alpha\Big]^{-(\beta+\gamma)/\alpha},
         \qquad x_c = 0.5, \quad \gamma = -0.2,$$
 
         with $(\rho_0, \alpha, \beta) = A\, (M/10^{14} M_\odot)^{\alpha_M}\, (1+z)^{\alpha_z}$
-        (Battaglia 2012, Table 1), truncated at ``truncate`` $\times R_{200c}$.
+        (Table 2), truncated at ``truncate`` $\times R_{200c}$.
+
+        The second exponent is $-(\beta+\gamma)/\alpha$, so that $\rho \propto x^{-\beta}$ at large $x$.
+        Eq. (A1) of Battaglia (2016) prints $-(\beta-\gamma)/\alpha$, which is a typo (N. Battaglia,
+        priv. comm., in arXiv:2509.03458, footnote 1). class_sz uses $-(\beta+\gamma)/\alpha$, as here;
+        BaryonForge 1.1.0 (``GasDensity``) uses the printed form, which has about 1/3 fewer electrons
+        within $2 R_{200c}$.
 
         :meth:`density` returns the optical depth per comoving Mpc,
         $\sigma_T\, a\, \rho_{\rm gas} / (\mu_e m_p)$ [Mpc$^{-1}$], so that :meth:`projected`
@@ -256,7 +262,7 @@ class Battaglia(HaloProfile):
         beta = A2 * m**m2 * zp**z2
 
         x = np.asarray(r, dtype=float) / r200c(cosmo, logm=lm, z=z)
-        y = x / 0.5                                                   # x / x_c, with gamma = -0.2
+        y = x / 0.5          # x / x_c; below, gamma = -0.2 and -(beta - 0.2)/alpha = -(beta + gamma)/alpha
         rho_gas = self.baryon_fraction(cosmo) * rho_crit(cosmo, z=z) * rho0 * y**-0.2 * (1.0 + y**alpha) ** (-(beta - 0.2) / alpha)
         tau = _SIGMA_T / (self.mu_e * _M_P) * rho_gas / zp            # sigma_T a rho_gas / (mu_e m_p)
         return np.where(x <= self.truncate * (1.0 + 1.0e-9), tau, 0.0)

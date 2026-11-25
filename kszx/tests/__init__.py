@@ -5,6 +5,7 @@ from . import test_utils
 from . import test_mlhack
 from . import test_wahack
 from . import test_profiles
+from . import test_cosmology
 
 
 def run_all_tests():
@@ -42,4 +43,6 @@ def run_all_tests():
     test_profiles.test_battaglia_fourier()
     test_profiles.test_nfw_fourier()
     test_profiles.test_baryon_fraction()
+
+    test_cosmology.test_frsd()
     

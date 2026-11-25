@@ -342,6 +342,12 @@ class Cosmology:
         return numba_utils._exp(logD)
 
     
+    def _omm0(self):
+        """Omega_m today, including massive neutrinos (CAMB's omnuh2). Used by the fitting functions Dfit() and frsd()."""
+        omnuh2 = getattr(self, 'omnuh2', 0.0)   # absent in a Cosmology pickled before omnuh2 was stored
+        return (self.params.ombh2 + self.params.omch2 + omnuh2) / self.h**2
+
+
     def Dfit(self, *, z, z0norm, check=True):
         r"""Return the growth function ``D(z)``, computed using a popular fitting function.
 
@@ -353,7 +359,7 @@ class Cosmology:
             assert np.all(z >= 0.0)
             assert np.all(z <= self.zmax * (1.0+1.0e-8))
             
-        omm0 = (self.params.ombh2 + self.params.omch2) / self.h**2
+        omm0 = self._omm0()
         oml0 = 1.0 - omm0
         omlz = oml0 / (oml0 + omm0 * (1+z)**3)
         ommz = 1.0 - omlz
@@ -371,7 +377,7 @@ class Cosmology:
             assert np.all(z <= self.zmax * (1.0+1.0e-8))
         
         # FIXME using fitting function for now
-        omm0 = (self.params.ombh2 + self.params.omch2) / self.h**2
+        omm0 = self._omm0()
         oml0 = 1.0 - omm0
         ommz = omm0 / (omm0 + oml0 * (1+z)**(-3.))
         return ommz**(5./9.)

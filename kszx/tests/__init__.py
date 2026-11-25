@@ -4,6 +4,7 @@ from . import test_lss
 from . import test_utils
 from . import test_mlhack
 from . import test_wahack
+from . import test_profiles
 
 
 def run_all_tests():
@@ -36,4 +37,8 @@ def run_all_tests():
     
     test_wahack.test_flatten_real()
     test_wahack.test_flatten_fourier()
+
+    test_profiles.test_profile_shapes()
+    test_profiles.test_battaglia_fourier()
+    test_profiles.test_nfw_fourier()
     

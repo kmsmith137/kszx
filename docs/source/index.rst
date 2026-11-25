@@ -33,6 +33,7 @@ kszx documentation
    healpix_utils
    pixell_utils
    wfunc_utils
+   profiles
    plot
 
 .. toctree::

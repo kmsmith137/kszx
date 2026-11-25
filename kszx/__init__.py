@@ -40,6 +40,7 @@ from . import io_utils
 from . import healpix_utils
 from . import pixell_utils
 from . import wfunc_utils
+from . import profiles
 from . import plot
 from . import tests
 from . import timing

@@ -22,22 +22,81 @@ def _hankel(prof, cosmo, k, logm, z, n=4000):
     return 2.0 * np.pi * (j0(np.outer(k, R)) @ (wR * R * prof.projected(cosmo, R=R, logm=logm, z=z)))
 
 
-def test_battaglia_fourier():
-    """Battaglia.fourier() against the Hankel transform of Battaglia.projected()."""
+def test_gas_fourier():
+    """fourier() against the Hankel transform of projected(), for Battaglia (n_e), Tau and TSZ."""
 
-    print('test_battaglia_fourier(): start')
+    print('test_gas_fourier(): start')
     cosmo = _cosmo()
+    gas, gas_sh = profiles.Battaglia(), profiles.Battaglia(fit='SH', truncate=3.0)
 
-    for prof in [ profiles.Battaglia(), profiles.Battaglia(fit='SH', truncate=3.0) ]:
+    for prof in [ gas, profiles.Tau(gas), profiles.Tau(gas_sh), profiles.TSZ(gas), profiles.TSZ(gas_sh, freq=90.0) ]:
         for logm, z in [ (12.5, 1.0), (14.0, 0.5), (15.0, 0.1) ]:
             rt = float(prof.r_t(cosmo, logm=logm, z=z))
             k = np.array([1.0e-4, 1.0, 3.0, 10.0, 30.0]) / rt
             u = prof.fourier(cosmo, k=k, logm=logm, z=z)
             hankel = _hankel(prof, cosmo, k, logm, z)
             assert u.shape == k.shape
-            assert np.all(np.abs(hankel - u) < 1.0e-6 * u[0])
+            assert np.all(np.abs(hankel - u) < 1.0e-6 * np.abs(u[0]))
 
-    print('test_battaglia_fourier(): pass')
+    print('test_gas_fourier(): pass')
+
+
+def test_battaglia_pressure():
+    """Battaglia.P_e() against class_sz's normalization, and Tau/TSZ against n_e/P_e."""
+
+    print('test_battaglia_pressure(): start')
+    cosmo = _cosmo()
+    gas = profiles.Battaglia()
+    fb, h = gas.baryon_fraction(cosmo), cosmo.params.h
+    mpc_cm = 3.08567758149e24
+
+    for logm, z in [ (13.0, 0.3), (15.0, 1.0) ]:
+        # class_sz: P_e = 2.61051e-18 (100 h E(z))^2 (M / R_200,phys) f_b P(x) in eV/cm^3 (with P_e = 0.5176 P_th).
+        M, R = 10.0**logm, float(profiles.r200c(cosmo, logm=logm, z=z)) / (1+z)
+        E = float(cosmo.H(z=z) / cosmo.H(z=0.0))
+        P0 = 18.1 * (M/1e14)**0.154 * (1+z)**-0.758
+        xc = 0.497 * (M/1e14)**-0.00865 * (1+z)**0.731
+        beta = 4.35 * (M/1e14)**0.0393 * (1+z)**0.415
+        x = np.array([0.05, 0.3, 1.0, 1.9])
+        P_class_sz = 2.61051e-18 * (100*h*E)**2 * (M/R) * fb * P0 * (x/xc)**-0.3 * (1 + x/xc)**-beta
+        P_e = gas.P_e(cosmo, r=x*R*(1+z), logm=logm, z=z) * 1.0e3 / mpc_cm**3     # keV/Mpc^3 -> eV/cm^3
+        assert np.all(np.abs(P_e / P_class_sz - 1.0) < 5.0e-4)
+
+        # Tau and TSZ are sigma_T a n_e and (sigma_T / m_e c^2) a P_e.
+        r = x * R * (1+z)
+        tau = profiles.Tau(gas).density(cosmo, r=r, logm=logm, z=z)
+        y = profiles.TSZ(gas).density(cosmo, r=r, logm=logm, z=z)
+        assert np.allclose(tau, profiles._SIGMA_T * gas.n_e(cosmo, r=r, logm=logm, z=z) / (1+z), rtol=1e-14)
+        assert np.allclose(y, profiles._SIGMA_T / 510.99895 * gas.P_e(cosmo, r=r, logm=logm, z=z) / (1+z), rtol=1e-14)
+
+    print('test_battaglia_pressure(): pass')
+
+
+def test_tsz_frequency():
+    """tsz_spectral_factor() limits, and TSZ(freq=...) = T_cmb g(nu) y in uK."""
+
+    print('test_tsz_frequency(): start')
+    cosmo = _cosmo()
+    g = profiles.tsz_spectral_factor
+
+    assert abs(g(1.0e-3) + 2.0) < 1.0e-9                     # Rayleigh-Jeans: Delta T / T = -2y
+    assert abs(g(217.5074)) < 1.0e-5                          # tSZ null at x = 3.830016
+    assert abs(g(150.0) + 0.95333) < 1.0e-5
+
+    gas = profiles.Battaglia()
+    R = np.array([0.05, 0.3, 1.0])
+    y = profiles.TSZ(gas).projected(cosmo, R=R, logm=14.0, z=0.5)
+    for freq in [ 90.0, 150.0, 220.0 ]:
+        dT = profiles.TSZ(gas, freq=freq).projected(cosmo, R=R, logm=14.0, z=0.5)
+        assert np.allclose(dT, 2.7255e6 * g(freq) * y, rtol=1e-14)
+
+    try:
+        profiles.TSZ(profiles.NFW())
+        raise AssertionError('TSZ(NFW()) should raise TypeError')
+    except TypeError:
+        pass
+
+    print('test_tsz_frequency(): pass')
 
 
 def test_nfw_fourier():
@@ -70,20 +129,24 @@ def test_profile_shapes():
 
     print('test_profile_shapes(): start')
     cosmo = _cosmo()
-    prof = profiles.Battaglia()
     logm = np.array([[12.0], [13.0], [14.0]])   # shape (3,1)
     R = np.linspace(0.01, 1.0, 5)               # shape (5,)
-
     assert profiles.r200c(cosmo, logm=logm, z=0.5).shape == (3,1)
-    assert prof.density(cosmo, r=R, logm=logm, z=0.5).shape == (3,5)
-    assert prof.projected(cosmo, R=R, logm=logm, z=0.5).shape == (3,5)
-    assert prof.fourier(cosmo, k=R, logm=logm[:,0], z=0.5).shape == (3,5)
-    assert prof.fourier(cosmo, k=1.0, logm=13.0, z=0.5).shape == ()
 
-    # Zero outside the truncation radius.
-    rt = float(prof.r_t(cosmo, logm=13.0, z=0.5))
-    assert prof.density(cosmo, r=1.01*rt, logm=13.0, z=0.5) == 0.0
-    assert prof.projected(cosmo, R=1.01*rt, logm=13.0, z=0.5) == 0.0
+    gas = profiles.Battaglia()
+    assert gas.n_e(cosmo, r=R, logm=logm, z=0.5).shape == (3,5)
+    assert gas.P_e(cosmo, r=R, logm=logm, z=0.5).shape == (3,5)
+
+    for prof in [ gas, profiles.Tau(gas), profiles.TSZ(gas), profiles.TSZ(gas, freq=150.0) ]:
+        assert prof.density(cosmo, r=R, logm=logm, z=0.5).shape == (3,5)
+        assert prof.projected(cosmo, R=R, logm=logm, z=0.5).shape == (3,5)
+        assert prof.fourier(cosmo, k=R, logm=logm[:,0], z=0.5).shape == (3,5)
+        assert prof.fourier(cosmo, k=1.0, logm=13.0, z=0.5).shape == ()
+
+        # Zero outside the truncation radius.
+        rt = float(prof.r_t(cosmo, logm=13.0, z=0.5))
+        assert prof.density(cosmo, r=1.01*rt, logm=13.0, z=0.5) == 0.0
+        assert prof.projected(cosmo, R=1.01*rt, logm=13.0, z=0.5) == 0.0
 
     print('test_profile_shapes(): pass')
 

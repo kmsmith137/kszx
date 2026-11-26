@@ -1,11 +1,11 @@
-r"""Radial profiles of halos: the Battaglia (2016) gas optical depth and a truncated NFW.
+r"""Radial profiles of halos: electron gas (Battaglia), kSZ optical depth, tSZ, and a truncated NFW.
 
 Conventions:
 
   - Halo masses are $M_{200c}$ in Msol, passed as ``logm`` $= \log_{10}(M_{200c}/M_\odot)$.
   - Radii are comoving Mpc and wavenumbers comoving Mpc$^{-1}$ (no h-units, as in the rest of kszx).
   - The only cosmology needed is a :class:`~kszx.Cosmology`: its ``H(z=...)`` and the parameters
-    ``ombh2``, ``omch2``, ``h``. There is no pyccl dependency.
+    ``ombh2``, ``omch2``, ``h`` (and ``cosmo.omnuh2``). There is no pyccl dependency.
   - In profile methods, ``cosmo`` is positional and everything else is a keyword (as in
     :class:`~kszx.Cosmology`). ``z`` is a scalar; ``r`` (or ``R``) and ``logm`` broadcast.
 
@@ -13,6 +13,18 @@ Every profile is a :class:`HaloProfile`: a spherical ``density(r)`` truncated at
 ``r_t``, with its line-of-sight projection ``projected(R)`` and its 3-d Fourier transform ``fourier(k)``.
 A halo at comoving distance $\chi$ subtends ``projected(chi * theta)`` at angle $\theta$, and its
 harmonic-space profile is ``fourier((l+1/2)/chi) / chi**2``.
+
+Class hierarchy::
+
+    HaloProfile                    density(r) -> projected(R), fourier(k)
+    |-- NFW                        unit-mass NFW (satellites, dark matter)
+    |-- ElectronProfile            gas model: n_e(r) and P_e(r); density() = comoving n_e
+    |   `-- Battaglia              n_e from Battaglia (2016), P_e from Battaglia et al. (2012)
+    |-- Tau(gas)                   kSZ: optical depth,   projected() = tau
+    `-- TSZ(gas, freq=None)        tSZ: Compton y,       projected() = y  (or Delta T [uK] at freq)
+
+For example, ``Tau(Battaglia()).projected(cosmo, R=R, logm=logm, z=z)`` is the optical depth $\tau(R)$,
+and ``TSZ(Battaglia(), freq=150.).fourier(cosmo, k=k, logm=logm, z=z)`` is the tSZ profile at 150 GHz.
 """
 
 import numpy as np
@@ -23,6 +35,10 @@ _C_KMS = 299792.458                                   # speed of light [km/s]
 _G_MPC_KMS = 4.30091e-9                               # G [Mpc (km/s)^2 / Msol]
 _SIGMA_T = 6.6524587158e-29 / 3.08567758149e22**2     # Thomson cross section [Mpc^2]
 _M_P = 1.67262192369e-27 / 1.988409870698051e30       # proton mass [Msol]
+_MEC2_KEV = 510.99895                                 # electron rest energy m_e c^2 [keV]
+_MSOL_KMS2_KEV = 1.988409870698051e36 / 1.602176634e-16   # 1 Msol (km/s)^2 in keV
+_H_OVER_K_GHZ = 6.62607015e-34 / 1.380649e-23 * 1.0e9     # h / k_B [K/GHz]
+_T_CMB = 2.7255                                       # CMB temperature [K] (CAMB default)
 
 
 ####################################################################################################
@@ -59,6 +75,21 @@ def c200c_duffy08(cosmo, *, logm, z):
     """
     M = 10.0 ** np.asarray(logm, dtype=float)
     return 5.71 * (M * cosmo.h / 2.0e12) ** -0.084 * (1.0 + np.asarray(z, dtype=float)) ** -0.47
+
+
+def tsz_spectral_factor(freq, *, T_cmb=_T_CMB):
+    r"""Returns the non-relativistic tSZ spectral function $g(x) = x \coth(x/2) - 4$, $x = h\nu / k_B T_{\rm cmb}$.
+
+    The tSZ temperature shift is $\Delta T / T_{\rm cmb} = g(x)\, y$: $g \to -2$ for $\nu \to 0$,
+    $g = 0$ at $\nu \approx 217.5$ GHz, and $g(150\ {\rm GHz}) = -0.953$.
+
+    Function args:
+
+       - ``freq`` (float or array): frequency [GHz].
+       - ``T_cmb`` (float): CMB temperature [K] (default 2.7255).
+    """
+    x = _H_OVER_K_GHZ * np.asarray(freq, dtype=float) / T_cmb
+    return x / np.tanh(0.5 * x) - 4.0
 
 
 ####################################################################################################
@@ -192,24 +223,56 @@ class NFW(HaloProfile):
 ####################################################################################################
 
 
-class Battaglia(HaloProfile):
+class ElectronProfile(HaloProfile):
+    r"""Base class for a model of the ionized gas in halos: electron density $n_e(r)$ and pressure $P_e(r)$.
+
+    Subclasses define :meth:`r_t`, :meth:`n_e` and :meth:`P_e`. The observables are built from a gas
+    model by wrapping it: :class:`Tau` (kSZ) uses $n_e$, and :class:`TSZ` (tSZ) uses $P_e$.
+
+    As a :class:`HaloProfile`, an ElectronProfile is the electron number density itself:
+    :meth:`density` is the comoving density $a^3 n_e$ [Mpc$^{-3}$], so ``fourier(k=0)`` is the number
+    of electrons in the halo and ``projected(R)`` is the comoving electron column density [Mpc$^{-2}$].
+    """
+
+    def n_e(self, cosmo, *, r, logm, z):
+        """Physical electron number density [Mpc$^{-3}$] at comoving radius ``r`` [Mpc]. Must be defined by subclass."""
+        raise NotImplementedError(f'{type(self).__name__}.n_e() is not defined')
+
+    def P_e(self, cosmo, *, r, logm, z):
+        r"""Physical electron pressure $n_e k_B T_e$ [keV Mpc$^{-3}$] at comoving radius ``r`` [Mpc]. Must be defined by subclass.
+
+        (So ``P_e / n_e`` is the electron temperature $k_B T_e$ in keV.)
+        """
+        raise NotImplementedError(f'{type(self).__name__}.P_e() is not defined')
+
+    def density(self, cosmo, *, r, logm, z):
+        """Comoving electron number density $a^3 n_e$ [Mpc$^{-3}$] at comoving radius ``r`` [Mpc]."""
+        return self.n_e(cosmo, r=r, logm=logm, z=z) / (1.0 + float(z))**3
+
+
+class Battaglia(ElectronProfile):
     # (A, alpha_M, alpha_z) for each of rho_0, alpha, beta (Battaglia 2016, arXiv:1607.02442, Table 2, Delta = 200).
-    fits = {
+    density_fits = {
         'AGN': ((4.0e3, 0.29, -0.66), (0.88, -0.03, 0.19), (3.83, 0.04, -0.025)),
         'SH': ((1.9e4, 0.09, -0.95), (0.70, -0.017, 0.27), (4.43, 0.005, 0.037)),
     }
 
-    def __init__(self, fit='AGN', truncate=2.0, mu_e=1.14, fb=None):
-        r"""Battaglia (2016) gas density profile, as an optical depth per comoving Mpc.
+    # (A, alpha_M, alpha_z) for each of P_0, x_c, beta (Battaglia et al. 2012, arXiv:1109.3711, Table 1, Delta = 200, AGN feedback).
+    pressure_fit = ((18.1, 0.154, -0.758), (0.497, -0.00865, 0.731), (4.35, 0.0393, 0.415))
 
-        The gas density on $M = M_{200c}$, with $x = r / R_{200c}$ (arXiv:1607.02442, Eqs. A1-A2):
+    def __init__(self, fit='AGN', truncate=2.0, mu_e=1.14, fb=None, X_H=0.76):
+        r"""Electron gas in halos: density from Battaglia (2016), pressure from Battaglia et al. (2012).
+
+        Use :class:`Tau` (``Tau(Battaglia())``) for the kSZ optical depth and :class:`TSZ` for the tSZ.
+        Both fits are on $M = M_{200c}$ (in Msol), with $x = r / R_{200c}$, and each parameter scales as
+        $A\, (M / 10^{14} M_\odot)^{\alpha_M}\, (1+z)^{\alpha_z}$. Both profiles are truncated at
+        ``truncate`` $\times R_{200c}$.
+
+        **Density** (arXiv:1607.02442, Eqs. A1-A2 and Table 2; ``fit`` = AGN or SH):
 
         $$\rho_{\rm gas}(r) = f_b\, \rho_c(z)\, \rho_0 \Big(\frac{x}{x_c}\Big)^\gamma
         \Big[1 + \Big(\frac{x}{x_c}\Big)^\alpha\Big]^{-(\beta+\gamma)/\alpha},
-        \qquad x_c = 0.5, \quad \gamma = -0.2,$$
-
-        with $(\rho_0, \alpha, \beta) = A\, (M/10^{14} M_\odot)^{\alpha_M}\, (1+z)^{\alpha_z}$
-        (Table 2), truncated at ``truncate`` $\times R_{200c}$.
+        \qquad x_c = 0.5, \quad \gamma = -0.2, \qquad n_e = \rho_{\rm gas} / (\mu_e m_p).$$
 
         The second exponent is $-(\beta+\gamma)/\alpha$, so that $\rho \propto x^{-\beta}$ at large $x$.
         Eq. (A1) of Battaglia (2016) prints $-(\beta-\gamma)/\alpha$, which is a typo (N. Battaglia,
@@ -217,29 +280,36 @@ class Battaglia(HaloProfile):
         BaryonForge 1.1.0 (``GasDensity``) uses the printed form, which has about 1/3 fewer electrons
         within $2 R_{200c}$.
 
-        :meth:`density` returns the optical depth per comoving Mpc,
-        $\sigma_T\, a\, \rho_{\rm gas} / (\mu_e m_p)$ [Mpc$^{-1}$], so that :meth:`projected`
-        is the optical depth $\tau$ through the halo (dimensionless) and :meth:`fourier` is in Mpc$^2$.
+        **Pressure** (arXiv:1109.3711, Eqs. 10-11 and Table 1; AGN feedback, the only $\Delta = 200$ fit):
+
+        $$P_{\rm th}(r) = P_{200}\, P_0 \Big(\frac{x}{x_c}\Big)^{-0.3} \Big[1 + \frac{x}{x_c}\Big]^{-\beta},
+        \qquad P_{200} = \frac{G M_{200}\, 200 \rho_c(z)\, f_b}{2 R_{200}},
+        \qquad P_e = \frac{2 (X_H + 1)}{5 X_H + 3} P_{\rm th}$$
+
+        with $R_{200}$ physical. $P_e = 0.518\, P_{\rm th}$ for $X_H = 0.76$ (B12, footnote 3), as in class_sz.
+        The pressure fit does not depend on ``fit``: B12 has no shock-heating fit at $\Delta = 200$.
 
         Constructor args:
 
-           - ``fit`` (str): ``'AGN'`` (AGN feedback, default) or ``'SH'`` (shock heating).
+           - ``fit`` (str): density fit, ``'AGN'`` (AGN feedback, default) or ``'SH'`` (shock heating).
            - ``truncate`` (float): truncation radius in units of $R_{200c}$ (default 2).
            - ``mu_e`` (float): mean molecular weight per free electron (default 1.14).
            - ``fb`` (float or None): baryon fraction. If None, uses $\Omega_b/\Omega_m$ =
              ``ombh2 / (ombh2 + omch2 + omnuh2)``, with CAMB's massive-neutrino density ``cosmo.omnuh2``
              (as in CAMB's ``omegam``, CCL, class_sz and BaryonForge).
+           - ``X_H`` (float): hydrogen mass fraction, used for $P_e / P_{\rm th}$ (default 0.76).
         """
-        if fit not in self.fits:
-            raise ValueError(f"Battaglia: fit={fit!r} not recognized (expected one of {list(self.fits)})")
+        if fit not in self.density_fits:
+            raise ValueError(f"Battaglia: fit={fit!r} not recognized (expected one of {list(self.density_fits)})")
 
         self.fit = fit
         self.truncate = float(truncate)
         self.mu_e = float(mu_e)
         self.fb = fb
+        self.X_H = float(X_H)
 
     def __repr__(self):
-        return f'Battaglia(fit={self.fit!r}, truncate={self.truncate}, mu_e={self.mu_e}, fb={self.fb})'
+        return f'Battaglia(fit={self.fit!r}, truncate={self.truncate}, mu_e={self.mu_e}, fb={self.fb}, X_H={self.X_H})'
 
     def baryon_fraction(self, cosmo):
         """Returns $f_b$: the constructor's ``fb``, or ``ombh2 / (ombh2 + omch2 + omnuh2)``."""
@@ -253,17 +323,101 @@ class Battaglia(HaloProfile):
         """Comoving truncation radius ``truncate * R_200c`` [Mpc]."""
         return self.truncate * r200c(cosmo, logm=logm, z=z)
 
-    def density(self, cosmo, *, r, logm, z):
-        """Optical depth per comoving Mpc at comoving radius ``r`` [Mpc]; ``r`` and ``logm`` broadcast, ``z`` is a scalar."""
-        (A0, m0, z0), (A1, m1, z1), (A2, m2, z2) = self.fits[self.fit]
-        lm, zp = np.asarray(logm, dtype=float), 1.0 + float(z)
-        m = 10.0 ** (lm - 14.0)
-        rho0 = A0 * m**m0 * zp**z0
-        alpha = A1 * m**m1 * zp**z1
-        beta = A2 * m**m2 * zp**z2
+    def _fit_params(self, fit, logm, z):
+        m, zp = 10.0 ** (np.asarray(logm, dtype=float) - 14.0), 1.0 + float(z)
+        return [ A * m**am * zp**az for (A, am, az) in fit ]
 
-        x = np.asarray(r, dtype=float) / r200c(cosmo, logm=lm, z=z)
+    def _x(self, cosmo, r, logm, z):
+        return np.asarray(r, dtype=float) / r200c(cosmo, logm=logm, z=z)
+
+    def n_e(self, cosmo, *, r, logm, z):
+        """Physical electron number density [Mpc$^{-3}$] at comoving radius ``r`` [Mpc]; ``r`` and ``logm`` broadcast."""
+        rho0, alpha, beta = self._fit_params(self.density_fits[self.fit], logm, z)
+        x = self._x(cosmo, r, logm, z)
         y = x / 0.5          # x / x_c; below, gamma = -0.2 and -(beta - 0.2)/alpha = -(beta + gamma)/alpha
         rho_gas = self.baryon_fraction(cosmo) * rho_crit(cosmo, z=z) * rho0 * y**-0.2 * (1.0 + y**alpha) ** (-(beta - 0.2) / alpha)
-        tau = _SIGMA_T / (self.mu_e * _M_P) * rho_gas / zp            # sigma_T a rho_gas / (mu_e m_p)
-        return np.where(x <= self.truncate * (1.0 + 1.0e-9), tau, 0.0)
+        return np.where(x <= self.truncate * (1.0 + 1.0e-9), rho_gas / (self.mu_e * _M_P), 0.0)
+
+    def P_e(self, cosmo, *, r, logm, z):
+        """Physical electron pressure [keV Mpc$^{-3}$] at comoving radius ``r`` [Mpc]; ``r`` and ``logm`` broadcast."""
+        P0, xc, beta = self._fit_params(self.pressure_fit, logm, z)
+        M, zp = 10.0 ** np.asarray(logm, dtype=float), 1.0 + float(z)
+        rhoc = rho_crit(cosmo, z=z)
+        R = np.cbrt(3.0 * M / (800.0 * np.pi * rhoc))                                     # physical R_200c [Mpc]
+        P200 = _G_MPC_KMS * M * 200.0 * rhoc * self.baryon_fraction(cosmo) / (2.0 * R)   # [Msol (km/s)^2 / Mpc^3]
+        x = np.asarray(r, dtype=float) / (R * zp)
+        y = x / xc
+        P_th = _MSOL_KMS2_KEV * P200 * P0 * y**-0.3 * (1.0 + y) ** -beta
+        P_e = 2.0 * (self.X_H + 1.0) / (5.0 * self.X_H + 3.0) * P_th
+        return np.where(x <= self.truncate * (1.0 + 1.0e-9), P_e, 0.0)
+
+
+####################################################################################################
+
+
+class Tau(HaloProfile):
+    def __init__(self, gas):
+        r"""kSZ optical-depth profile of an :class:`ElectronProfile` ``gas`` (e.g. ``Tau(Battaglia())``).
+
+        :meth:`density` is the optical depth per comoving Mpc, $\sigma_T\, a\, n_e$ [Mpc$^{-1}$],
+        so :meth:`projected` is the optical depth $\tau(R)$ (dimensionless) and :meth:`fourier` is in Mpc$^2$.
+        """
+        if not isinstance(gas, ElectronProfile):
+            raise TypeError(f'Tau: expected an ElectronProfile (e.g. Battaglia()), got {gas!r}')
+        self.gas = gas
+
+    def __repr__(self):
+        return f'Tau({self.gas!r})'
+
+    def r_t(self, cosmo, *, logm, z):
+        """Comoving truncation radius of the gas profile [Mpc]."""
+        return self.gas.r_t(cosmo, logm=logm, z=z)
+
+    def density(self, cosmo, *, r, logm, z):
+        """Optical depth per comoving Mpc at comoving radius ``r`` [Mpc]; ``r`` and ``logm`` broadcast, ``z`` is a scalar."""
+        return _SIGMA_T * self.gas.n_e(cosmo, r=r, logm=logm, z=z) / (1.0 + float(z))
+
+
+class TSZ(HaloProfile):
+    def __init__(self, gas, freq=None, T_cmb=_T_CMB):
+        r"""Thermal SZ profile of an :class:`ElectronProfile` ``gas`` (e.g. ``TSZ(Battaglia(), freq=150.)``).
+
+        The Compton-y parameter is $y = (\sigma_T / m_e c^2) \int P_e\, dl_{\rm phys}$. If ``freq`` is None,
+        :meth:`density` is $y$ per comoving Mpc, $(\sigma_T / m_e c^2)\, a\, P_e$ [Mpc$^{-1}$], so
+        :meth:`projected` is $y(R)$ (dimensionless) and :meth:`fourier` is in Mpc$^2$.
+
+        If ``freq`` is given, everything is multiplied by $T_{\rm cmb}\, g(x)$ (see
+        :func:`tsz_spectral_factor`), so :meth:`projected` is the CMB temperature shift $\Delta T(R)$ in
+        $\mu$K (thermodynamic units, as in kszx CMB maps) and :meth:`fourier` is in $\mu$K Mpc$^2$.
+        This is the non-relativistic tSZ at a single frequency: no relativistic corrections and no
+        bandpass integration (for a band, pass its effective tSZ frequency).
+
+        Constructor args:
+
+           - ``gas`` (:class:`ElectronProfile`): the gas model, e.g. ``Battaglia()``.
+           - ``freq`` (float or None): observing frequency [GHz]. None (default) returns Compton $y$.
+           - ``T_cmb`` (float): CMB temperature [K] (default 2.7255).
+        """
+        if not isinstance(gas, ElectronProfile):
+            raise TypeError(f'TSZ: expected an ElectronProfile (e.g. Battaglia()), got {gas!r}')
+        self.gas = gas
+        self.freq = None if (freq is None) else float(freq)
+        self.T_cmb = float(T_cmb)
+
+    def __repr__(self):
+        return f'TSZ({self.gas!r}, freq={self.freq}, T_cmb={self.T_cmb})'
+
+    def spectral_factor(self):
+        r"""Returns 1 if ``freq`` is None (Compton $y$), else $T_{\rm cmb} g(x)$ in $\mu$K ($\Delta T$ per unit $y$)."""
+        if self.freq is None:
+            return 1.0
+        return 1.0e6 * self.T_cmb * float(tsz_spectral_factor(self.freq, T_cmb=self.T_cmb))
+
+    def r_t(self, cosmo, *, logm, z):
+        """Comoving truncation radius of the gas profile [Mpc]."""
+        return self.gas.r_t(cosmo, logm=logm, z=z)
+
+    def density(self, cosmo, *, r, logm, z):
+        """Compton y (or $\\Delta T$ [$\\mu$K]) per comoving Mpc at comoving radius ``r`` [Mpc]; ``r`` and ``logm`` broadcast."""
+        P_e = self.gas.P_e(cosmo, r=r, logm=logm, z=z)
+        return self.spectral_factor() * (_SIGMA_T / _MEC2_KEV) * P_e / (1.0 + float(z))

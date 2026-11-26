@@ -2,7 +2,7 @@ r"""Radial profiles of halos: electron gas (Battaglia), kSZ optical depth, tSZ, 
 
 Conventions:
 
-  - Halo masses are $M_{200c}$ in Msol, passed as ``logm`` $= \log_{10}(M_{200c}/M_\odot)$.
+  - Halo masses are $M_{200c}$ in Msol, passed as ``logm`` $= \log_{10}(M_{200c}/M_{\odot})$.
   - Radii are comoving Mpc and wavenumbers comoving Mpc$^{-1}$ (no h-units, as in the rest of kszx).
   - The only cosmology needed is a :class:`~kszx.Cosmology`: its ``H(z=...)`` and the parameters
     ``ombh2``, ``omch2``, ``h`` (and ``cosmo.omnuh2``). There is no pyccl dependency.
@@ -57,7 +57,7 @@ def rho_crit(cosmo, *, z):
 
 
 def r200c(cosmo, *, logm, z):
-    r"""Returns the comoving radius $R_{200c}$ [Mpc] of halos with $\log_{10}(M_{200c}/M_\odot)$ = ``logm``.
+    r"""Returns the comoving radius $R_{200c}$ [Mpc] of halos with $\log_{10}(M_{200c}/M_{\odot})$ = ``logm``.
 
     $M_{200c} = (4\pi/3)\, 200 \rho_c(z) R_{\rm phys}^3$ and $R_{200c} = (1+z) R_{\rm phys}$.
     ``logm`` and ``z`` broadcast.
@@ -70,7 +70,7 @@ def r200c(cosmo, *, logm, z):
 def c200c_duffy08(cosmo, *, logm, z):
     r"""Returns the Duffy et al. (2008) concentration $c_{200c}$ (full sample, NFW fit).
 
-    $c_{200c} = 5.71\, (M_{200c} / 2 \times 10^{12}\, h^{-1} M_\odot)^{-0.084}\, (1+z)^{-0.47}$.
+    $c_{200c} = 5.71\, (M_{200c} / 2 \times 10^{12}\, h^{-1} M_{\odot})^{-0.084}\, (1+z)^{-0.47}$.
     ``logm`` and ``z`` broadcast.
     """
     M = 10.0 ** np.asarray(logm, dtype=float)
@@ -118,7 +118,7 @@ class HaloProfile:
         Function args:
 
            - ``R`` (float or array): comoving projected radius [Mpc].
-           - ``logm`` (float or array): $\log_{10}(M_{200c}/M_\odot)$, broadcast against ``R``.
+           - ``logm`` (float or array): $\log_{10}(M_{200c}/M_{\odot})$, broadcast against ``R``.
            - ``z`` (float): redshift.
            - ``n_l`` (int): number of Gauss-Legendre nodes.
 
@@ -146,7 +146,7 @@ class HaloProfile:
         Function args:
 
            - ``k`` (float or array): comoving wavenumber [Mpc$^{-1}$].
-           - ``logm`` (float or array): $\log_{10}(M_{200c}/M_\odot)$.
+           - ``logm`` (float or array): $\log_{10}(M_{200c}/M_{\odot})$.
            - ``z`` (float): redshift.
 
         Returns an array of shape ``logm.shape + k.shape``. Units are those of ``density()`` times Mpc$^3$.
@@ -277,7 +277,7 @@ class Battaglia(ElectronProfile):
 
         Use :class:`Tau` (``Tau(Battaglia())``) for the kSZ optical depth and :class:`TSZ` for the tSZ.
         Both fits are on $M = M_{200c}$ (in Msol), with $x = r / R_{200c}$, and each parameter scales as
-        $A\, (M / 10^{14} M_\odot)^{\alpha_M}\, (1+z)^{\alpha_z}$. Both profiles are truncated at
+        $A\, (M / 10^{14} M_{\odot})^{\alpha_M}\, (1+z)^{\alpha_z}$. Both profiles are truncated at
         ``truncate`` $\times R_{200c}$.
 
         **Density** (arXiv:1607.02442, Eqs. A1-A2 and Table 2; ``fit`` = AGN or SH):

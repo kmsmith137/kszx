@@ -44,6 +44,7 @@ def run_all_tests():
     test_profiles.test_battaglia_pressure()
     test_profiles.test_tsz_frequency()
     test_profiles.test_nfw_fourier()
+    test_profiles.test_quadrature_accuracy()
     test_profiles.test_baryon_fraction()
 
     test_cosmology.test_frsd()

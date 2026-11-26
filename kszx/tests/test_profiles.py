@@ -2,6 +2,7 @@ import functools
 
 import camb
 import numpy as np
+from scipy.integrate import quad
 from scipy.special import j0
 
 from .. import profiles
@@ -107,13 +108,13 @@ def test_nfw_fourier():
     logm = np.array([12.0, 13.5, 15.0])
     z = 0.7
 
-    for prof in [ profiles.NFW(), profiles.NFW(truncate=2.0) ]:
+    for prof in [ profiles.NFW(), profiles.NFW(truncate=2.0), profiles.NFW(truncate=30.0) ]:
         rt = prof.r_t(cosmo, logm=logm, z=z)
-        k = np.geomspace(1.0e-3, 50.0, 40) / rt.min()
+        k = np.geomspace(1.0e-3, 100.0, 40)    # Mpc^{-1}, up to k r_t ~ 10^4
         u = prof.fourier(cosmo, k=k, logm=logm, z=z)
         uq = profiles.HaloProfile.fourier(prof, cosmo, k=k, logm=logm, z=z)
         assert u.shape == uq.shape == (3, 40)
-        assert np.all(np.abs(u - uq) < 1.0e-6)
+        assert np.all(np.abs(uq / u - 1.0) < 1.0e-9)
         assert np.all(np.abs(prof.fourier(cosmo, k=0.0, logm=logm, z=z) - 1.0) < 1.0e-10)
 
         # Also checks NFW.projected() (inherited from HaloProfile).
@@ -122,6 +123,39 @@ def test_nfw_fourier():
         assert np.all(np.abs(uh - prof.fourier(cosmo, k=kh, logm=logm[1], z=z)) < 1.0e-5)
 
     print('test_nfw_fourier(): pass')
+
+
+def test_quadrature_accuracy():
+    """projected() and fourier() against adaptive quadrature (scipy.integrate.quad), at large truncation, small R and high k."""
+
+    print('test_quadrature_accuracy(): start')
+    cosmo = _cosmo()
+    logm, z = 15.0, 0.1
+
+    for prof in [ profiles.Tau(profiles.Battaglia(truncate=30.0)), profiles.TSZ(profiles.Battaglia(fit='SH', truncate=100.0)) ]:
+        rt = float(prof.r_t(cosmo, logm=logm, z=z))
+        rho = lambda r: float(prof.density(cosmo, r=r, logm=logm, z=z))
+        edges = np.concatenate([[0.0], np.geomspace(1.0e-7 * rt, rt, 40)])
+
+        # fourier(): QUADPACK's QAWO (weight='sin') on geometric pieces of [0, r_t].
+        k = np.array([0.01, 1.0, 100.0])    # Mpc^{-1}
+        u = prof.fourier(cosmo, k=k, logm=logm, z=z)
+        for kk, uu in zip(k, u):
+            ref = sum(quad(lambda r: r * rho(r), a, b, weight='sin', wvar=kk, epsabs=0, epsrel=1e-11, limit=200)[0]
+                      for a, b in zip(edges[:-1], edges[1:]))
+            assert abs(uu / (4.0 * np.pi * ref / kk) - 1.0) < 1.0e-9
+
+        # projected(), down to R = 10^{-6} r_t.
+        R = np.array([1.0e-6, 1.0e-3, 0.1, 0.9]) * rt
+        p = prof.projected(cosmo, R=R, logm=logm, z=z)
+        for RR, pp in zip(R, p):
+            L = np.sqrt(rt**2 - RR**2)
+            ledges = np.concatenate([[0.0], np.geomspace(1.0e-7 * L, L, 40)])
+            ref = 2.0 * sum(quad(lambda l: rho(np.hypot(RR, l)), a, b, epsabs=0, epsrel=1e-12, limit=200)[0]
+                            for a, b in zip(ledges[:-1], ledges[1:]))
+            assert abs(pp / ref - 1.0) < 1.0e-9
+
+    print('test_quadrature_accuracy(): pass')
 
 
 def test_profile_shapes():
